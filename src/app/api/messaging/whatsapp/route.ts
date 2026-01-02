@@ -16,18 +16,22 @@ export async function POST(req: Request) {
         if (tenantId) {
             try {
                 const adminDb = getAdminDb();
-                const metaSnap = await adminDb.doc(`tenants/${tenantId}/integrations/meta`).get();
-                if (metaSnap.exists) {
-                    const metaData = metaSnap.data() || {};
-                    if (metaData.accessToken) {
-                        accessToken = metaData.accessToken;
-                    }
-                }
                 const configSnap = await adminDb.doc(`tenants/${tenantId}/config/whatsapp`).get();
-                if (configSnap.exists) {
-                    const data = configSnap.data() || {};
-                    if (!accessToken) accessToken = data.accessToken || accessToken;
-                    phoneNumberId = data.phoneNumberId || phoneNumberId;
+                const configData = configSnap.data() || {};
+
+                // Use WhatsApp config token if available
+                if (configData.accessToken) {
+                    accessToken = configData.accessToken;
+                }
+                phoneNumberId = configData.phoneNumberId || phoneNumberId;
+
+                // Fallback to Meta integration token only if WhatsApp token is missing
+                if (!accessToken) {
+                    const metaSnap = await adminDb.doc(`tenants/${tenantId}/integrations/meta`).get();
+                    if (metaSnap.exists) {
+                        const metaData = metaSnap.data() || {};
+                        accessToken = metaData.accessToken || accessToken;
+                    }
                 }
             } catch (e) {
                 console.error(`[WhatsApp] Error fetching config for tenant ${tenantId}:`, e);

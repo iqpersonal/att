@@ -12,7 +12,12 @@ interface Meeting {
     webLink?: string;
     onlineMeeting?: {
         joinUrl: string;
+        id?: string;
     };
+    joinUrl?: string;
+    organizerEmail?: string;
+    mailboxEmail?: string;
+    onlineMeetingId?: string;
     attendees?: any[];
 }
 
@@ -23,7 +28,7 @@ export function TeamsMeetingList({ userId, tenantId }: { userId?: string; tenant
     const [error, setError] = useState("");
     const [attendanceLoading, setAttendanceLoading] = useState<string | null>(null);
     const [selectedAttendance, setSelectedAttendance] = useState<any>(null);
-    const [activeTab, setActiveTab] = useState<"live" | "upcoming" | "past">("upcoming");
+    const [activeTab, setActiveTab] = useState<"live" | "upcoming" | "past">("live");
 
     const fetchMeetings = async () => {
         setLoading(true);
@@ -60,11 +65,22 @@ export function TeamsMeetingList({ userId, tenantId }: { userId?: string; tenant
 
     // Categorization Logic
     const now = new Date();
+    const today = now.toISOString().split('T')[0]; // Current YYYY-MM-DD in UTC/ISO
+
     const categorized = meetings.reduce((acc, meeting) => {
         const start = new Date(meeting.start.dateTime);
         const end = new Date(meeting.end.dateTime);
+        const meetingDate = meeting.start.dateTime.split('T')[0];
 
-        if (now >= start && now <= end) {
+        // A meeting is "Live" if:
+        // 1. It is happening TODAY (regardless of specific time, to handle timezone overlaps)
+        // 2. OR it ended very recently (less than 6 hours ago)
+        const isToday = meetingDate === today;
+        const isCurrentlyWithinRange = now >= start && now <= end;
+        const endedVeryRecently = now > end && (now.getTime() - end.getTime()) < 6 * 60 * 60 * 1000;
+        const startingInLittleWhile = now < start && (start.getTime() - now.getTime()) < 12 * 60 * 60 * 1000; // Show upcoming for the next 12 hours as primary
+
+        if (isToday || isCurrentlyWithinRange || endedVeryRecently) {
             acc.live.push(meeting);
         } else if (now < start) {
             acc.upcoming.push(meeting);
@@ -85,14 +101,34 @@ export function TeamsMeetingList({ userId, tenantId }: { userId?: string; tenant
         alert(`Reminder functionality coming soon used for meeting: ${meetingId}`);
     };
 
-    const handleCheckAttendance = async (meetingId: string) => {
-        setAttendanceLoading(meetingId);
+    const handleCheckAttendance = async (meeting: Meeting) => {
+        setAttendanceLoading(meeting.id);
         try {
-            const res = await fetch(`/api/teams/attendance?meetingId=${meetingId}&tenantId=${tenantId || "tellus-teams"}`);
+            const queryData: any = {
+                meetingId: meeting.id,
+                tenantId: tenantId || "tellus-teams",
+                userId: userId || ""
+            };
+
+            // Add extra metadata for robust resolution
+            if (meeting.organizerEmail) queryData.organizerEmail = meeting.organizerEmail;
+            if (meeting.mailboxEmail) queryData.mailboxEmail = meeting.mailboxEmail;
+            if (meeting.joinUrl || meeting.onlineMeeting?.joinUrl) {
+                queryData.joinUrl = meeting.joinUrl || meeting.onlineMeeting?.joinUrl;
+            }
+            if (meeting.onlineMeetingId || meeting.onlineMeeting?.id) {
+                queryData.onlineMeetingId = meeting.onlineMeetingId || meeting.onlineMeeting?.id;
+            }
+
+            const params = new URLSearchParams(queryData);
+            const res = await fetch(`/api/teams/attendance?${params.toString()}`);
             const data = await res.json();
 
-            if (data.error) {
-                throw new Error(data.error);
+            if (!res.ok) {
+                if (res.status === 404 && data.message) {
+                    throw new Error(data.message);
+                }
+                throw new Error(data.error || "Attendance data not yet available for this session.");
             }
 
             setSelectedAttendance(data);
@@ -178,7 +214,14 @@ export function TeamsMeetingList({ userId, tenantId }: { userId?: string; tenant
                                 <Video className="h-7 w-7" />
                             </div>
                             <div className="min-w-0">
-                                <h4 className="font-extrabold text-slate-800 text-base line-clamp-1 font-outfit">{meeting.subject}</h4>
+                                <div className="flex items-center gap-2 mb-1">
+                                    <h4 className="font-extrabold text-slate-800 text-base line-clamp-1 font-outfit">{meeting.subject}</h4>
+                                    {new Date(meeting.start.dateTime).toDateString() === new Date().toDateString() && (
+                                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-md text-[9px] font-black uppercase tracking-tighter shrink-0 border border-emerald-200">
+                                            TODAY
+                                        </span>
+                                    )}
+                                </div>
                                 <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5 text-xs font-bold text-slate-400">
                                     <span className="flex items-center gap-1.5">
                                         <Calendar className="h-3.5 w-3.5" />
@@ -210,7 +253,7 @@ export function TeamsMeetingList({ userId, tenantId }: { userId?: string; tenant
                                 <Bell className="h-5 w-5" />
                             </button>
                             <button
-                                onClick={() => handleCheckAttendance(meeting.id)}
+                                onClick={() => handleCheckAttendance(meeting)}
                                 disabled={attendanceLoading === meeting.id}
                                 className={`flex items-center gap-2 px-4 h-10 rounded-xl text-xs font-bold transition-all disabled:opacity-50 ${attendanceLoading === meeting.id
                                     ? "bg-slate-100 text-slate-400"
@@ -230,79 +273,81 @@ export function TeamsMeetingList({ userId, tenantId }: { userId?: string; tenant
             </div>
 
             {/* Attendance Results Overlay */}
-            {selectedAttendance && (
-                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden">
-                        <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                            <div>
-                                <h3 className="text-xl font-bold text-slate-800">{selectedAttendance.subject}</h3>
-                                <p className="text-slate-400 text-sm font-medium">Attendance Detail Report</p>
+            {
+                selectedAttendance && (
+                    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden">
+                            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                                <div>
+                                    <h3 className="text-xl font-bold text-slate-800">{selectedAttendance.subject}</h3>
+                                    <p className="text-slate-400 text-sm font-medium">Attendance Detail Report</p>
+                                </div>
+                                <button
+                                    onClick={() => setSelectedAttendance(null)}
+                                    className="h-10 w-10 flex items-center justify-center rounded-xl bg-white shadow-sm border border-slate-100 text-slate-400 hover:text-slate-600 transition-all font-bold"
+                                >
+                                    ✕
+                                </button>
                             </div>
-                            <button
-                                onClick={() => setSelectedAttendance(null)}
-                                className="h-10 w-10 flex items-center justify-center rounded-xl bg-white shadow-sm border border-slate-100 text-slate-400 hover:text-slate-600 transition-all font-bold"
-                            >
-                                ✕
-                            </button>
-                        </div>
 
-                        <div className="flex-1 overflow-y-auto p-6">
-                            {selectedAttendance.attendanceRecords?.length > 0 ? (
-                                <div className="space-y-3">
-                                    <div className="grid grid-cols-3 text-xs font-bold text-slate-400 px-4 mb-2">
-                                        <span>PARTICIPANT</span>
-                                        <span>JOIN TIME</span>
-                                        <span className="text-right">DURATION</span>
-                                    </div>
-                                    {selectedAttendance.attendanceRecords.map((record: any, idx: number) => (
-                                        <div key={idx} className="p-4 bg-slate-50 rounded-2xl flex items-center justify-between group hover:bg-slate-100 transition-all">
-                                            <div className="flex items-center gap-3 w-1/3">
-                                                <div className="h-8 w-8 bg-white rounded-lg flex items-center justify-center text-[#6264A7] font-bold text-xs shadow-sm group-hover:shadow-none transition-all">
-                                                    {(record.identity?.displayName || "U")[0]}
-                                                </div>
-                                                <span className="font-bold text-slate-700 text-sm line-clamp-1">
-                                                    {record.identity?.displayName || "Unknown User"}
-                                                </span>
-                                            </div>
-                                            <div className="text-slate-500 text-xs font-medium w-1/3 text-center">
-                                                {format(new Date(record.joinDateTime), "h:mm a")}
-                                            </div>
-                                            <div className="w-1/3 text-right">
-                                                <span className="px-2 py-1 bg-green-100 text-green-700 rounded-md text-[10px] font-bold">
-                                                    {Math.round(record.totalAttendanceInSeconds / 60)} min
-                                                </span>
-                                            </div>
+                            <div className="flex-1 overflow-y-auto p-6">
+                                {selectedAttendance.attendanceRecords?.length > 0 ? (
+                                    <div className="space-y-3">
+                                        <div className="grid grid-cols-3 text-xs font-bold text-slate-400 px-4 mb-2">
+                                            <span>PARTICIPANT</span>
+                                            <span>JOIN TIME</span>
+                                            <span className="text-right">DURATION</span>
                                         </div>
-                                    ))}
-                                </div>
-                            ) : (
-                                <div className="text-center py-12">
-                                    <Users className="h-12 w-12 text-slate-200 mx-auto mb-4" />
-                                    <p className="text-slate-500 font-medium">No one has joined this meeting yet.</p>
-                                    {selectedAttendance.message && (
-                                        <p className="text-slate-400 text-xs mt-1">{selectedAttendance.message}</p>
-                                    )}
-                                </div>
-                            )}
-                        </div>
+                                        {selectedAttendance.attendanceRecords.map((record: any, idx: number) => (
+                                            <div key={idx} className="p-4 bg-slate-50 rounded-2xl flex items-center justify-between group hover:bg-slate-100 transition-all">
+                                                <div className="flex items-center gap-3 w-1/3">
+                                                    <div className="h-8 w-8 bg-white rounded-lg flex items-center justify-center text-[#6264A7] font-bold text-xs shadow-sm group-hover:shadow-none transition-all">
+                                                        {(record.identity?.displayName || "U")[0]}
+                                                    </div>
+                                                    <span className="font-bold text-slate-700 text-sm line-clamp-1">
+                                                        {record.identity?.displayName || "Unknown User"}
+                                                    </span>
+                                                </div>
+                                                <div className="text-slate-500 text-xs font-medium w-1/3 text-center">
+                                                    {format(new Date(record.joinDateTime), "h:mm a")}
+                                                </div>
+                                                <div className="w-1/3 text-right">
+                                                    <span className="px-2 py-1 bg-green-100 text-green-700 rounded-md text-[10px] font-bold">
+                                                        {Math.round(record.totalAttendanceInSeconds / 60)} min
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-12">
+                                        <Users className="h-12 w-12 text-slate-200 mx-auto mb-4" />
+                                        <p className="text-slate-500 font-medium">No one has joined this meeting yet.</p>
+                                        {selectedAttendance.message && (
+                                            <p className="text-slate-400 text-xs mt-1">{selectedAttendance.message}</p>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
 
-                        <div className="p-6 bg-slate-50/50 border-t border-slate-100 flex justify-end gap-3">
-                            <button
-                                onClick={() => setSelectedAttendance(null)}
-                                className="px-6 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold text-sm hover:bg-slate-50 transition-all"
-                            >
-                                Close
-                            </button>
-                            <button
-                                onClick={() => alert("Syncing to internal attendance logs...")}
-                                className="px-6 py-2.5 bg-[#6264A7] text-white rounded-xl font-bold text-sm hover:shadow-lg hover:shadow-[#6264A7]/20 transition-all"
-                            >
-                                Sync to DB
-                            </button>
+                            <div className="p-6 bg-slate-50/50 border-t border-slate-100 flex justify-end gap-3">
+                                <button
+                                    onClick={() => setSelectedAttendance(null)}
+                                    className="px-6 py-2.5 bg-white border border-slate-200 text-slate-600 rounded-xl font-bold text-sm hover:bg-slate-50 transition-all"
+                                >
+                                    Close
+                                </button>
+                                <button
+                                    onClick={() => alert("Syncing to internal attendance logs...")}
+                                    className="px-6 py-2.5 bg-[#6264A7] text-white rounded-xl font-bold text-sm hover:shadow-lg hover:shadow-[#6264A7]/20 transition-all"
+                                >
+                                    Sync to DB
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+        </div >
     );
 }

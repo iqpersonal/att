@@ -37,20 +37,20 @@ async function findTenantByWabaId(wabaId: string) {
 }
 
 // Helper to send auto-ack
-async function sendAutoAck(tenantId: string, phone: string, name: string, config: any) {
+async function sendAutoAck(tenantId: string, leadId: string, phone: string, name: string, accessToken: string, config: any) {
     if (!config.whatsappAutoAck) return;
 
-    console.log(`[AutoAck] Attempting auto-ack for ${name} (${phone})`);
+    console.log(`[AutoAck] Attempting auto-ack for ${name} (${phone}) for lead ${leadId}`);
 
     const adminDb = getAdminDb();
     const whatsappSnap = await adminDb.doc(`tenants/${tenantId}/config/whatsapp`).get();
-    const whatsappData = whatsappSnap.data();
+    const whatsappData = whatsappSnap.data() || {};
 
-    const phoneNumberId = whatsappData?.phoneNumberId;
-    const accessToken = config.accessToken;
+    const phoneNumberId = whatsappData.phoneNumberId;
+    const whatsappAccessToken = whatsappData.accessToken || accessToken; // Prioritize dedicated WhatsApp token
 
-    if (!phoneNumberId || !accessToken) {
-        console.warn(`[AutoAck] Missing credentials for tenant ${tenantId}`);
+    if (!phoneNumberId || !whatsappAccessToken) {
+        console.warn(`[AutoAck] Missing credentials for tenant ${tenantId}. PhoneID: ${!!phoneNumberId}, Token: ${!!whatsappAccessToken}`);
         return;
     }
 
@@ -80,20 +80,17 @@ async function sendAutoAck(tenantId: string, phone: string, name: string, config
         const res = await fetch(url, {
             method: "POST",
             headers: {
-                "Authorization": `Bearer ${accessToken}`,
+                "Authorization": `Bearer ${whatsappAccessToken}`,
                 "Content-Type": "application/json"
             },
             body: JSON.stringify(payload)
         });
         const data = await res.json();
-        console.log(`[AutoAck] Response for ${phone}:`, JSON.stringify(data));
 
-        if (data.error) {
-            console.error(`[AutoAck] Meta Error:`, data.error.message);
-        }
+        if (data.messages && data.messages.length > 0) {
+            console.log(`[AutoAck] Success for ${phone}`);
 
-        // Log to history
-        if (data.messages) {
+            // 1. Log to generic message history
             await adminDb.collection("tenants").doc(tenantId).collection("message_history").add({
                 toName: name,
                 toNumber: cleanPhone,
@@ -102,11 +99,19 @@ async function sendAutoAck(tenantId: string, phone: string, name: string, config
                 status: 'sent',
                 createdAt: FieldValue.serverTimestamp()
             });
-        }
 
-        console.log(`[AutoAck] Response for ${phone}:`, JSON.stringify(data));
+            // 2. Log to the specific Lead's Interaction Hub (Phase 2 feature)
+            await adminDb.doc(`leads/${leadId}`).collection("activities").add({
+                type: "whatsapp",
+                content: `Automated "Welcome" WhatsApp sent via Meta Webhook (Template: ${templateName})`,
+                createdAt: FieldValue.serverTimestamp(),
+                userId: "system_automation"
+            });
+        } else if (data.error) {
+            console.error(`[AutoAck] Meta Error:`, data.error.message);
+        }
     } catch (err) {
-        console.error(`[AutoAck] Error:`, err);
+        console.error(`[AutoAck] Fatal Error:`, err);
     }
 }
 
@@ -150,10 +155,43 @@ export async function POST(req: Request) {
                 for (const change of entry.changes) {
                     if (change.field === "leadgen") {
                         const leadGenId = change.value.leadgen_id;
-                        const graphUrl = `https://graph.facebook.com/v21.0/${leadGenId}?access_token=${config?.accessToken}`;
+                        const formId = change.value.form_id;
+
+                        // NEW: Robust Token Exchange for Webhook
+                        // Some detail fetches fail if using a System User token instead of Page Token
+                        let effectiveToken = config?.accessToken;
+                        try {
+                            const pageTokenUrl = `https://graph.facebook.com/v21.0/${pageId}?fields=access_token&access_token=${config?.accessToken}`;
+                            const pageTokenRes = await fetch(pageTokenUrl);
+                            const pageTokenData = await pageTokenRes.json();
+                            if (pageTokenData.access_token) {
+                                console.log("[Webhook] Exchanged for Page Access Token.");
+                                effectiveToken = pageTokenData.access_token;
+                            }
+                        } catch (e) {
+                            console.warn("[Webhook] Token exchange failed, falling back to original.");
+                        }
+
+                        // NEW: Fetch Form Name for consistency
+                        let formName = "";
+                        if (formId) {
+                            try {
+                                const formUrl = `https://graph.facebook.com/v21.0/${formId}?fields=name&access_token=${effectiveToken}`;
+                                const formRes = await fetch(formUrl);
+                                const formData = await formRes.json();
+                                formName = formData.name || "";
+                            } catch (e) {
+                                console.warn("[Webhook] Failed to fetch form name.");
+                            }
+                        }
+
+                        const graphUrl = `https://graph.facebook.com/v21.0/${leadGenId}?access_token=${effectiveToken}`;
                         const response = await fetch(graphUrl);
                         const leadDetails = await response.json();
-                        if (leadDetails.error) continue;
+                        if (leadDetails.error) {
+                            console.error(`[Webhook] Details Error for ${leadGenId}:`, leadDetails.error.message);
+                            continue;
+                        }
 
                         const fields = leadDetails.field_data || [];
                         const getValue = (key: string) => {
@@ -166,7 +204,7 @@ export async function POST(req: Request) {
                         const phone = getValue("phone") || "";
 
                         const adminDb = getAdminDb();
-                        await adminDb.collection("leads").add({
+                        const leadDocRef = await adminDb.collection("leads").add({
                             tenantId,
                             fullName,
                             email,
@@ -174,16 +212,24 @@ export async function POST(req: Request) {
                             source: "Facebook/Instagram",
                             status: "new",
                             metaLeadId: leadGenId,
-                            formId: change.value.form_id || null,
+                            formId: formId || null,
+                            formName, // Save form name
                             adId: change.value.ad_id || null,
                             createdAt: FieldValue.serverTimestamp(),
                             updatedAt: FieldValue.serverTimestamp(),
-                            notes: `Auto-ingested from Meta Lead Form.`
+                            notes: `Auto-ingested from Meta Lead Form${formName ? `: ${formName}` : ""}.`
+                        });
+
+                        // Log creation to Interaction Hub
+                        await leadDocRef.collection("activities").add({
+                            type: "creation",
+                            content: `Lead auto-ingested via Meta Webhook (Form: ${formName || 'Unknown'})`,
+                            createdAt: FieldValue.serverTimestamp()
                         });
 
                         // 4. Trigger Auto-Acknowledgment
                         if (phone) {
-                            await sendAutoAck(tenantId, phone, fullName, config);
+                            await sendAutoAck(tenantId, leadDocRef.id, phone, fullName, effectiveToken, config);
                         }
                     }
                 }

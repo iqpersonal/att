@@ -8,15 +8,15 @@ export async function GET(req: Request) {
 
         const adminDb = getAdminDb();
 
-        // 1. Fetch centralized Meta token first
-        const metaSnap = await adminDb.doc(`tenants/${tenantId}/integrations/meta`).get();
-        const metaData = metaSnap.data() || {};
-
-        // 2. Fetch legacy WhatsApp config for WABA ID
+        // 1. Fetch Legacy WhatsApp config first (Dedicated WhatsApp Token)
         const configSnap = await adminDb.doc(`tenants/${tenantId}/config/whatsapp`).get();
         const configData = configSnap.data() || {};
 
-        const accessToken = metaData.accessToken || configData.accessToken;
+        // 2. Fetch centralized Meta integration for fallback
+        const metaSnap = await adminDb.doc(`tenants/${tenantId}/integrations/meta`).get();
+        const metaData = metaSnap.data() || {};
+
+        const accessToken = configData.accessToken || metaData.accessToken;
         const wabaId = configData.wabaId;
 
         if (!accessToken || !wabaId) {

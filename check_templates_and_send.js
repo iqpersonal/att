@@ -1,0 +1,46 @@
+
+const TOKEN = "EAALlcr5AuWYBQTW9PKuYkwPBxGx6hg2sxPBoUesWq1CS5zcMawQZCBXbQXivaTQA364V43SBqzoqsnZCcYe0ZC2q26nmXWVT4Kwkm020ZAqfltXgaxNZAa8cgCilKCUcz1zlST0W8wYpzHrWaUyJcymzZApz452RX4Jan5rpllmZAiaT13UsSbo3J3OjgKLeUGUgnxPKWDv1wTdERIzpQKYxK10xhM2KtuMyEZA7L7gI8IMmgrhOELZBq8DdyZB57BEB2NstBjEMbDz0dZCjsvcp2lZB7gZDZD";
+const PHONE_ID = "786617204538778";
+
+async function run() {
+    try {
+        console.log("\nChecking Template List for this Phone ID / WABA...");
+        // Since we have the phone ID, let's try to get its templates
+        const res = await fetch(`https://graph.facebook.com/v21.0/25425371247051012/message_templates?access_token=${TOKEN}`);
+        const data = await res.json();
+        console.log("Templates Found:", JSON.stringify(data, null, 2));
+
+        if (data.data && data.data.length > 0) {
+            console.log("\nFound a template! Trying to use its exact name/lang...");
+            const firstTpl = data.data[0];
+
+            const sendUrl = `https://graph.facebook.com/v21.0/${PHONE_ID}/messages`;
+            const payload = {
+                messaging_product: "whatsapp",
+                to: "919446890860",
+                type: "template",
+                template: {
+                    name: firstTpl.name,
+                    language: {
+                        code: firstTpl.language
+                    }
+                }
+            };
+
+            const sRes = await fetch(sendUrl, {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${TOKEN}`,
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify(payload)
+            });
+            const sData = await sRes.json();
+            console.log("Send Attempt with found template:", JSON.stringify(sData, null, 2));
+        }
+    } catch (err) {
+        console.error("Error:", err);
+    }
+}
+
+run();

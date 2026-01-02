@@ -41,13 +41,20 @@ export function AddLeadModal({ isOpen, onClose, onSuccess, tenantId }: AddLeadMo
         setError(null);
 
         try {
-            await addDoc(collection(db, "leads"), {
+            const docRef = await addDoc(collection(db, "leads"), {
                 ...formData,
                 tenantId,
                 status: "new",
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
                 notes: "Manually added through dashboard"
+            });
+
+            // Log initial activity
+            await addDoc(collection(db, "leads", docRef.id, "activities"), {
+                type: "creation",
+                content: "Prospect manually created in CRM",
+                createdAt: serverTimestamp()
             });
 
             setSuccess(true);

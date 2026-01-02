@@ -34,32 +34,56 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
             if (firebaseUser) {
-                // Fetch tenantId from Firestore user profile
                 try {
-                    const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
-                    if (userDoc.exists()) {
-                        const userData = userDoc.data();
-                        const tid = userData.tenantId || null;
-                        setTenantId(tid);
-                        setRole(userData.role || "admin");
+                    // 1. Try to get claims from the token first (Performance Optimization)
+                    const tokenResult = await firebaseUser.getIdTokenResult();
+                    const claims = tokenResult.claims;
 
-                        // Check if tenant is suspended and fetch features
-                        if (tid) {
-                            const tenantDoc = await getDoc(doc(db, "tenants", tid));
-                            if (tenantDoc.exists()) {
-                                const tData = tenantDoc.data();
-                                setFeatures(tData.features || []);
+                    if (claims.tenantId && claims.role) {
+                        console.log("[Auth] Using Custom Claims:", claims.role, claims.tenantId);
+                        setTenantId(claims.tenantId as string);
+                        setRole(claims.role as string);
 
-                                if (userData.role !== "super-admin" && tData.status === "suspended") {
-                                    setIsSuspended(true);
-                                } else {
-                                    setIsSuspended(false);
+                        // Still need to check tenant status (suspension)
+                        const tenantDoc = await getDoc(doc(db, "tenants", claims.tenantId as string));
+                        if (tenantDoc.exists()) {
+                            const tData = tenantDoc.data();
+                            setFeatures(tData.features || []);
+
+                            // Super-admins are never suspended
+                            if (claims.role !== "super-admin" && tData.status === "suspended") {
+                                setIsSuspended(true);
+                            } else {
+                                setIsSuspended(false);
+                            }
+                        }
+                    } else {
+                        // 2. Fallback to Firestore (Backward Compatibility / First Sync)
+                        console.log("[Auth] Custom claims missing, falling back to Firestore lookup.");
+                        const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+                        if (userDoc.exists()) {
+                            const userData = userDoc.data();
+                            const tid = userData.tenantId || null;
+                            setTenantId(tid);
+                            setRole(userData.role || "admin");
+
+                            if (tid) {
+                                const tenantDoc = await getDoc(doc(db, "tenants", tid));
+                                if (tenantDoc.exists()) {
+                                    const tData = tenantDoc.data();
+                                    setFeatures(tData.features || []);
+
+                                    if (userData.role !== "super-admin" && tData.status === "suspended") {
+                                        setIsSuspended(true);
+                                    } else {
+                                        setIsSuspended(false);
+                                    }
                                 }
                             }
                         }
                     }
                 } catch (error) {
-                    console.error("Error fetching user tenantId:", error);
+                    console.error("Error in AuthContext state change:", error);
                 }
                 setUser(firebaseUser);
             } else {

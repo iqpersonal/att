@@ -1,69 +1,26 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
     
-    function getTenantId() {
-      let path = /databases/$(database)/documents/users/$(request.auth.uid);
-      return exists(path) ? get(path).data.tenantId : null;
+    function isOwner(userId) {
+      return request.auth.uid == userId;
     }
 
-    // Helper to check for global admin role
-    function isSuperAdmin() {
-      let path = /databases/$(database)/documents/users/$(request.auth.uid);
-      return exists(path) && get(path).data.role == 'super-admin';
-    }
-
-    // Helper to check if the tenant is active
-    function isTenantActive() {
-      let tid = getTenantId();
-      let tpath = /databases/$(database)/documents/tenants/$(tid);
-      return tid != null && exists(tpath) && get(tpath).data.status == 'active';
-    }
-
-    // Users can only manage their own profile
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if isOwner(userId);
+      allow create: if isSignedIn() && isOwner(userId);
+      allow update: if isOwner(userId) && 
+        !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['subscription_tier', 'credits_remaining', 'email']);
     }
 
-    match /students/{studentId} {
-      // For reading/updating: must have the same tenantId or be super-admin
-      // AND the tenant must be active
-      allow read, update, delete: if request.auth != null && 
-        ((resource.data.tenantId == getTenantId() && isTenantActive()) || isSuperAdmin());
-      
-      // For creating: must set the tenantId correctly and be active
-      // (Used when admins add students)
-      allow create: if request.auth != null && 
-        ((request.resource.data.tenantId == getTenantId() && isTenantActive()) || isSuperAdmin());
-    }
-
-    // Tenant-level configuration and branding
-    match /tenants/{tenantId} {
-      // Users can only access their school's tenant document, or super-admin
-      allow read, update, delete: if request.auth != null && (getTenantId() == tenantId || isSuperAdmin());
-      
-      // Bootstrapping: Allow creating a tenant if the user is the owner
-      allow create: if request.auth != null && (request.resource.data.ownerId == request.auth.uid || isSuperAdmin());
-      
-      // All sub-collections (e.g., config/whatsapp) inherit this security
-      match /{allPaths=**} {
-        allow read, write: if request.auth != null && (getTenantId() == tenantId || isSuperAdmin());
-      }
-    }
-
-    // Lead Management Module (Premium)
-    match /leads/{leadId} {
-      allow read, update, delete: if request.auth != null && 
-        ((resource.data.tenantId == getTenantId() && isTenantActive()) || isSuperAdmin());
-      
-      allow create: if request.auth != null && 
-        ((request.resource.data.tenantId == getTenantId() && isTenantActive()) || isSuperAdmin());
-    }
-
-    // Mail collection (used by Trigger Email extension)
-    match /mail/{mailId} {
-      allow create: if request.auth != null;
-      allow read: if false; // Only the extension needs to read these
+    match /history/{docId} {
+      allow read: if isOwner(resource.data.userId);
+      allow create: if isSignedIn() && isOwner(request.resource.data.userId);
+      allow delete: if isOwner(resource.data.userId);
     }
   }
 }

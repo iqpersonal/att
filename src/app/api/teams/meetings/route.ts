@@ -1,76 +1,74 @@
 import { getServerSession } from "next-auth/next";
 import { getGraphClient, getGraphClientForUser } from "@/lib/microsoftGraph";
 import { NextResponse } from "next/server";
+import { authOptions } from "../../auth/[...nextauth]/route";
 
 export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
-    const userId = searchParams.get("userId"); // Optional: for background sync
-    let tenantId = searchParams.get("tenantId");
+    const userId = searchParams.get("userId");
+    const tenantId = searchParams.get("tenantId") || "tellus-teams";
+    const organizerEmail = searchParams.get("organizerEmail");
 
-    if (!tenantId || tenantId === "null") {
-        tenantId = "tellus-teams";
-    }
+    // Window: 15 days back and 30 days forward
+    const startDateTime = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString();
+    const endDateTime = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
 
-    const session: any = await getServerSession();
+    const session: any = await getServerSession(authOptions as any);
 
     try {
         let client;
-        let targetEmail = userId || session?.user?.email || "me";
+        let targetEmail = session?.user?.email || "me";
 
-        // Priority 1: User Session (Delegated)
         if (session?.accessToken) {
             client = getGraphClient(session.accessToken);
-        }
-        // Priority 2: Stored User Token (Delegated - background)
-        else if (userId) {
+        } else if (userId && userId.length > 5) {
             client = await getGraphClientForUser(userId);
-        }
-        // Priority 3: App Credentials (Application Permissions)
-        else {
+            const { doc, getDoc } = await import("firebase/firestore");
+            const { db } = await import("@/lib/firebase");
+            const userSnap = await getDoc(doc(db, "users", userId));
+            if (userSnap.exists()) {
+                const userData = userSnap.data();
+                targetEmail = userData?.email || userData?.microsoftEmail || userData?.microsoftTokens?.email || "me";
+                // CRITICAL: Ensure targetEmail is never the Firebase UID
+                if (targetEmail === userId) targetEmail = "me";
+            }
+        } else {
             const { getAzureCredentials, getAppAccessToken } = await import("@/lib/azureAuth");
             const credentials = await getAzureCredentials(tenantId);
-
-            if (!credentials) {
-                return NextResponse.json({
-                    error: `Unauthorized: No credentials for tenant ${tenantId}.`
-                }, { status: 401 });
-            }
-
-            if (!credentials.azureCoordinatorEmail) {
-                return NextResponse.json({ error: "Configuration Error: azureCoordinatorEmail is not set for this tenant." }, { status: 400 });
-            }
-
+            if (!credentials) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
             const appToken = await getAppAccessToken(credentials);
             client = getGraphClient(appToken);
-            targetEmail = credentials.azureCoordinatorEmail;
+            targetEmail = organizerEmail || credentials.azureCoordinatorEmail;
         }
 
-        // Fetch meetings with the resolved client
-        // Optimized window: 15 days back (for history) and 30 days forward (for upcoming)
-        const startDateTime = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString();
-        const endDateTime = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+        if (targetEmail === "me" && !session?.accessToken && !userId) {
+            // Fallback to app coordinator if we are truly lost
+            const { getAzureCredentials } = await import("@/lib/azureAuth");
+            const credentials = await getAzureCredentials(tenantId);
+            if (credentials?.azureCoordinatorEmail) targetEmail = credentials.azureCoordinatorEmail;
+        }
+
+        console.log(`[Meetings API] Target: ${targetEmail}, Tenant: ${tenantId}`);
 
         const result = await client.api(`/users/${encodeURIComponent(targetEmail)}/calendar/calendarView`)
             .query({ startDateTime, endDateTime })
-            .select("id,subject,start,end,onlineMeeting,webLink,isOnlineMeeting")
-            .top(50) // Reduced from 100 to 50 for faster processing
+            .select("id,subject,start,end,onlineMeeting,webLink,isOnlineMeeting,organizer")
+            .top(50)
             .get();
 
         const onlineMeetings = (result.value || []).filter((event: any) =>
             event.isOnlineMeeting === true || event.onlineMeeting !== null
-        );
+        ).map((event: any) => ({
+            ...event,
+            mailboxEmail: targetEmail,
+            organizerEmail: event.organizer?.emailAddress?.address,
+            joinUrl: event.onlineMeeting?.joinUrl || event.onlineMeetingUrl || event.webLink,
+            onlineMeetingId: event.onlineMeeting?.id
+        }));
 
         return NextResponse.json({ value: onlineMeetings });
     } catch (error: any) {
-        console.error("Meetings Fetch Error Details:", {
-            message: error.message,
-            statusCode: error.statusCode,
-            body: error.body,
-            tenantId
-        });
-        return NextResponse.json({
-            error: error.message || "Failed to fetch meetings",
-            details: error.body ? JSON.parse(error.body) : null
-        }, { status: 500 });
+        console.error("Meetings API Error:", error.message, error.statusCode);
+        return NextResponse.json({ error: error.message || "Failed to fetch meetings" }, { status: error.statusCode || 500 });
     }
 }

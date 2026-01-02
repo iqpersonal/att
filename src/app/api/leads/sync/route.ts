@@ -124,19 +124,27 @@ export async function POST(req: Request) {
                                 status: "new",
                                 metaLeadId: lead.id,
                                 formId: lead.form_id || form.id,
+                                formName: form.name || "", // Save form name
                                 ...campaignData,
                                 createdAt: FieldValue.serverTimestamp(),
                                 notes: `Synced from Meta Form: ${form.name}`
                             });
                             syncCount++;
                         } else {
-                            // Update existing lead if campaign information is missing or unknown
+                            // Update existing lead if campaign information or formName is missing
                             const existingLead = existingLeadQuery.docs[0];
                             const existingData = existingLead.data();
 
-                            if (!existingData.campaignName || existingData.campaignName === "Unknown Campaign") {
-                                console.log(`[Sync] Updating existing lead ${lead.id} with campaign: ${campaignData.campaignName}`);
-                                await existingLead.ref.update(campaignData);
+                            const needsUpdate = !existingData.campaignName ||
+                                existingData.campaignName === "Unknown Campaign" ||
+                                !existingData.formName;
+
+                            if (needsUpdate) {
+                                console.log(`[Sync] Updating existing lead ${lead.id} with enriched data.`);
+                                await existingLead.ref.update({
+                                    ...campaignData,
+                                    formName: existingData.formName || form.name || ""
+                                });
                                 syncCount++;
                             }
                         }
@@ -149,7 +157,7 @@ export async function POST(req: Request) {
 
         return NextResponse.json({
             success: true,
-            message: `Successfully synced ${syncCount} new leads.`
+            message: `Successfully processed ${forms.length} forms and synced ${syncCount} leads.`
         });
 
     } catch (error: any) {

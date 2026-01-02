@@ -2,7 +2,7 @@
 
 import { useSession, signIn, signOut } from "next-auth/react";
 import { useState, useEffect } from "react";
-import { query, collection, where, getDocs } from "firebase/firestore";
+import { query as firestoreQuery, collection, where, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import {
     Calendar,
@@ -16,9 +16,10 @@ import {
     Clock,
     Search,
     Filter,
-    ArrowUpRight,
     Mail,
-    MessageSquare
+    MessageSquare,
+    Info,
+    ArrowUpRight
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import Link from "next/link";
@@ -29,15 +30,28 @@ interface Meeting {
     id: string;
     subject: string;
     start: { dateTime: string };
+    organizerEmail?: string;
+    mailboxEmail?: string;
+    joinUrl?: string;
+    onlineMeetingId?: string;
 }
 
 interface Participant {
     id: string;
     displayName: string;
-    emailAddress: string;
+    email: string;
+    totalDuration: number;
     attendanceRecords: {
         totalAttendanceInSeconds: number;
     }[];
+    phoneNumber?: string; // Added to store student's phone
+}
+
+interface Student {
+    id: string;
+    name: string;
+    email: string;
+    phoneNumber?: string;
 }
 
 export default function AttendancePage() {
@@ -48,8 +62,29 @@ export default function AttendancePage() {
     const [selectedMeeting, setSelectedMeeting] = useState<string | null>(null);
     const [participants, setParticipants] = useState<Participant[]>([]);
     const [fetchingParticipants, setFetchingParticipants] = useState(false);
+    const [backendMessage, setBackendMessage] = useState<string | null>(null);
+    const [lastSync, setLastSync] = useState<Date | null>(null);
     const [isLinked, setIsLinked] = useState(false);
     const [notifying, setNotifying] = useState<string | null>(null);
+    const [bulkNotifying, setBulkNotifying] = useState(false);
+    const [students, setStudents] = useState<Student[]>([]);
+
+    useEffect(() => {
+        // Fetch students to map emails to phone numbers for notifications
+        if (!tenantId) return;
+        const q = firestoreQuery(
+            collection(db, "students"),
+            where("tenantId", "==", tenantId || "studio-school-beta")
+        );
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const studentData = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            })) as Student[];
+            setStudents(studentData);
+        });
+        return () => unsubscribe();
+    }, [tenantId]);
 
     useEffect(() => {
         if (session) {
@@ -63,76 +98,13 @@ export default function AttendancePage() {
         setIsLinked(!!(session as any)?.refreshToken);
     };
 
-    const handleNotify = async (person: Participant, method: 'email' | 'whatsapp' | 'both') => {
-        setNotifying(person.displayName);
-        const meetingSubject = meetings.find(m => m.id === selectedMeeting)?.subject || "Today's Session";
-        const duration = Math.round(person.attendanceRecords[0].totalAttendanceInSeconds / 60);
-
-        const emailBody = `
-            <h2>Attendance Report</h2>
-            <p>Dear Parent,</p>
-            <p>This is to inform you that <b>${person.displayName}</b> successfully attended <b>${meetingSubject}</b>.</p>
-            <ul>
-                <li><b>Session:</b> ${meetingSubject}</li>
-                <li><b>Duration:</b> ${duration} minutes</li>
-                <li><b>Status:</b> Present</li>
-            </ul>
-            <p>Regards,<br>StudioSchool Team</p>
-        `;
-
-        try {
-            if (method === 'email' || method === 'both') {
-                await sendEmail(person.emailAddress, `Attendance Report: ${meetingSubject}`, emailBody);
-            }
-            if (method === 'whatsapp' || method === 'both') {
-                // Lookup student phone number from Firestore
-                let phoneNumber = person.emailAddress;
-                try {
-                    const studentsRef = collection(db, "students");
-                    const q = query(
-                        studentsRef,
-                        where("email", "==", person.emailAddress),
-                        where("tenantId", "==", tenantId || "studio-school-beta")
-                    );
-                    const querySnapshot = await getDocs(q);
-                    if (!querySnapshot.empty) {
-                        const studentData = querySnapshot.docs[0].data();
-                        phoneNumber = studentData.phoneNumber || phoneNumber;
-                    }
-                } catch (e) {
-                    console.error("Firestore lookup error:", e);
-                }
-
-                // Meta requires pre-approved templates. Using 'attendance_report' as a default.
-                await sendWhatsApp(
-                    phoneNumber,
-                    "attendance_report",
-                    [
-                        {
-                            type: "body",
-                            parameters: [
-                                { type: "text", text: person.displayName },
-                                { type: "text", text: meetingSubject },
-                                { type: "text", text: duration.toString() }
-                            ]
-                        }
-                    ],
-                    tenantId || "studio-school-beta"
-                );
-            }
-            alert(`Notification sent to ${person.displayName} via ${method}`);
-        } catch (error) {
-            console.error("Notification error:", error);
-            alert("Failed to send notification. Check console for details.");
-        } finally {
-            setNotifying(null);
-        }
-    };
-
     const fetchMeetings = async () => {
         setLoading(true);
         try {
-            const res = await fetch("/api/teams/meetings");
+            const params = new URLSearchParams({
+                tenantId: tenantId || "studio-school-beta"
+            });
+            const res = await fetch(`/api/teams/meetings?${params.toString()}`);
             const data = await res.json();
             setMeetings(data.value || []);
         } catch (error) {
@@ -142,13 +114,112 @@ export default function AttendancePage() {
         }
     };
 
+    const handleNotifyParent = async (participant: Participant) => {
+        const student = students.find(s => s.email.toLowerCase() === participant.email.toLowerCase());
+        const phone = student?.phoneNumber || participant.phoneNumber;
+
+        if (!phone) {
+            alert(`No phone number found for ${participant.displayName}.`);
+            return;
+        }
+
+        setNotifying(participant.id);
+
+        try {
+            await sendWhatsApp(
+                phone,
+                "general_announcement",
+                [
+                    {
+                        type: "body",
+                        parameters: [
+                            { type: "text", text: participant.displayName }
+                        ]
+                    }
+                ],
+                tenantId || "studio-school-beta"
+            );
+        } catch (error) {
+            console.error("WhatsApp Error:", error);
+            alert(`Failed to notify perent of ${participant.displayName}`);
+        } finally {
+            setNotifying(null);
+        }
+    };
+
+    const handleNotifyAllParents = async () => {
+        if (!participants.length) return;
+
+        const confirmSend = confirm(`Are you sure you want to send notifications to ${participants.length} parents?`);
+        if (!confirmSend) return;
+
+        setBulkNotifying(true);
+        let successCount = 0;
+        let failCount = 0;
+
+        for (const person of participants) {
+            const student = students.find(s => s.email.toLowerCase() === person.email.toLowerCase());
+            const phone = student?.phoneNumber || person.phoneNumber;
+
+            if (!phone) {
+                failCount++;
+                continue;
+            }
+
+            try {
+                await sendWhatsApp(
+                    phone,
+                    "general_announcement",
+                    [
+                        {
+                            type: "body",
+                            parameters: [
+                                { type: "text", text: person.displayName }
+                            ]
+                        }
+                    ],
+                    tenantId || "studio-school-beta"
+                );
+                successCount++;
+            } catch (err) {
+                console.error(`Bulk send error for ${person.displayName}:`, err);
+                failCount++;
+            }
+        }
+
+        setBulkNotifying(false);
+        alert(`Bulk Send Complete!\n\n✅ Success: ${successCount}\n❌ Failed/Skipped: ${failCount}`);
+    };
+
     const fetchParticipants = async (meetingId: string) => {
         setSelectedMeeting(meetingId);
         setFetchingParticipants(true);
         try {
-            const res = await fetch(`/api/teams/attendance?meetingId=${meetingId}`);
+            const meeting = meetings.find(m => m.id === meetingId);
+            const queryData: any = { meetingId, tenantId: tenantId || "studio-school-beta" };
+
+            if (meeting?.organizerEmail) queryData.organizerEmail = meeting.organizerEmail;
+            if (meeting?.mailboxEmail) queryData.mailboxEmail = meeting.mailboxEmail;
+            if (meeting?.joinUrl) queryData.joinUrl = meeting.joinUrl;
+            if (meeting?.onlineMeetingId) queryData.onlineMeetingId = meeting.onlineMeetingId;
+
+            const params = new URLSearchParams(queryData);
+            const res = await fetch(`/api/teams/attendance?${params.toString()}`);
+
+            if (res.status === 404) {
+                setParticipants([]);
+                console.log("No live session found for this meeting. Likely no one joined.");
+                return;
+            }
+
             const data = await res.json();
-            setParticipants(data.attendanceRecords || []);
+            setBackendMessage(data.message || null);
+            const formattedParticipants = (data.attendanceRecords || []).map((p: any) => ({
+                ...p,
+                email: p.emailAddress || p.email // Ensure consistency
+            }));
+            setParticipants(formattedParticipants);
+            setLastSync(new Date());
         } catch (error) {
             console.error("Error fetching participants:", error);
         } finally {
@@ -253,7 +324,7 @@ export default function AttendancePage() {
                                 >
                                     <div className="relative z-10">
                                         <div className={`text-[10px] font-bold uppercase tracking-[0.2em] mb-3 ${selectedMeeting === meeting.id ? "text-white/80" : "text-primary"}`}>
-                                            {new Date(meeting.start.dateTime).toLocaleDateString("en-US", {
+                                            {new Date(meeting.start?.dateTime || Date.now()).toLocaleDateString("en-US", {
                                                 month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
                                             })}
                                         </div>
@@ -271,18 +342,29 @@ export default function AttendancePage() {
 
                 {/* Participants Detail */}
                 <div className="lg:col-span-8 space-y-8">
-                    <div className="flex items-center justify-between">
-                        <h2 className="text-2xl font-bold text-[#0D121F] font-outfit flex items-center gap-3">
-                            <Users className="h-6 w-6 text-primary" />
+                    <div className="flex items-center justify-between mb-6">
+                        <h2 className="text-xl font-bold flex items-center gap-2">
+                            <Users className="w-6 h-6 text-blue-600" />
                             Attendance Roster
+                            {lastSync && (
+                                <span className="text-xs font-normal text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full ml-2">
+                                    Last sync: {lastSync.toLocaleTimeString()}
+                                </span>
+                            )}
                         </h2>
-                        {selectedMeeting && (
+                        {selectedMeeting && participants.length > 0 && (
                             <div className="flex gap-3">
-                                <button className="p-3 bg-white border border-slate-100 rounded-2xl text-slate-400 hover:text-primary transition-all shadow-sm">
-                                    <Filter className="h-5 w-5" />
-                                </button>
-                                <button className="p-3 bg-white border border-slate-100 rounded-2xl text-slate-400 hover:text-primary transition-all shadow-sm">
-                                    <Search className="h-5 w-5" />
+                                <button
+                                    onClick={handleNotifyAllParents}
+                                    disabled={bulkNotifying || fetchingParticipants}
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-2xl font-bold transition-all shadow-xl shadow-emerald-500/20 text-sm flex items-center gap-2 group disabled:opacity-50"
+                                >
+                                    {bulkNotifying ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                        <MessageSquare className="h-4 w-4" />
+                                    )}
+                                    Notify Full Batch
                                 </button>
                                 <button className="bg-primary hover:bg-primary/90 text-white px-6 py-3 rounded-2xl font-bold transition-all shadow-xl shadow-primary/20 text-sm">
                                     Export PDF
@@ -317,7 +399,16 @@ export default function AttendancePage() {
                                     <AlertCircle className="h-12 w-12 text-orange-400" />
                                 </div>
                                 <p className="text-slate-900 font-bold text-xl mb-2">No Records Available</p>
-                                <p className="text-slate-400 font-medium max-w-xs">Reports are typically finalized once the live session has completely ended.</p>
+                                <p className="text-slate-400 font-medium max-w-xs">
+                                    {backendMessage || "Reports are typically finalized once the live session has completely ended."}
+                                </p>
+                                <button
+                                    onClick={() => fetchParticipants(selectedMeeting!)}
+                                    className="mt-6 flex items-center gap-2 text-primary font-bold hover:underline"
+                                >
+                                    <RefreshCw className="h-4 w-4" />
+                                    Try Refreshing Now
+                                </button>
                             </div>
                         ) : (
                             <div className="overflow-x-auto">
@@ -327,7 +418,7 @@ export default function AttendancePage() {
                                             <th className="px-10 py-6 text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em]">Participant Name</th>
                                             <th className="px-10 py-6 text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em]">Email Address</th>
                                             <th className="px-10 py-6 text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em]">Duration</th>
-                                            <th className="px-10 py-6 text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em]">Record</th>
+                                            <th className="px-10 py-6 text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em]">Status</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-50">
@@ -344,13 +435,13 @@ export default function AttendancePage() {
                                                 <td className="px-10 py-6">
                                                     <div className="text-slate-500 font-medium text-sm flex items-center gap-2">
                                                         <LinkIcon className="h-3 w-3 opacity-20" />
-                                                        {person.emailAddress}
+                                                        {person.email}
                                                     </div>
                                                 </td>
                                                 <td className="px-10 py-6">
                                                     <div className="flex items-center gap-2 text-slate-700 font-bold">
                                                         <Clock className="h-4 w-4 text-slate-300" />
-                                                        {Math.round(person.attendanceRecords[0].totalAttendanceInSeconds / 60)}m
+                                                        {Math.round((person.totalDuration || 0) / 60)}m
                                                     </div>
                                                 </td>
                                                 <td className="px-10 py-6">
@@ -362,20 +453,18 @@ export default function AttendancePage() {
                                                         <div className="h-8 w-[1px] bg-slate-100 mx-2" />
                                                         <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                                             <button
-                                                                onClick={() => handleNotify(person, 'email')}
+                                                                onClick={() => handleNotifyParent(person)}
                                                                 disabled={!!notifying}
-                                                                title="Send Email"
-                                                                className="p-2 bg-slate-50 text-slate-400 hover:text-primary hover:bg-primary/5 rounded-xl transition-all"
-                                                            >
-                                                                {notifying === person.displayName ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleNotify(person, 'whatsapp')}
-                                                                disabled={!!notifying}
-                                                                title="Send WhatsApp"
+                                                                title="Notify Parent (WhatsApp)"
                                                                 className="p-2 bg-slate-50 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"
                                                             >
-                                                                <MessageSquare className="h-4 w-4" />
+                                                                {notifying === (person.id || person.displayName) ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageSquare className="h-4 w-4" />}
+                                                            </button>
+                                                            <button
+                                                                className="p-2 border border-slate-100 text-slate-300 hover:text-slate-900 rounded-xl transition-all"
+                                                                title="Activity Logs"
+                                                            >
+                                                                <Info className="h-4 w-4" />
                                                             </button>
                                                         </div>
                                                     </div>

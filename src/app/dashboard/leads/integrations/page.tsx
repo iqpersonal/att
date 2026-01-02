@@ -314,7 +314,7 @@ export default function IntegrationsPage() {
                             </li>
                             <li className="flex gap-3">
                                 <span className="h-6 w-6 rounded-full bg-slate-800 flex items-center justify-center font-bold text-xs flex-shrink-0">3</span>
-                                <p>Generate a new Token with <code>leads_retrieval</code>, <code>pages_manage_ads</code>, and <code>pages_read_engagement</code> permissions.</p>
+                                <p>Generate a new Token with <code>leads_retrieval</code>, <code>pages_manage_ads</code>, <code>pages_read_engagement</code>, and <code>whatsapp_business_management</code> permissions.</p>
                             </li>
                             <li className="flex gap-3">
                                 <span className="h-6 w-6 rounded-full bg-slate-800 flex items-center justify-center font-bold text-xs flex-shrink-0">4</span>

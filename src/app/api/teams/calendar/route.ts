@@ -1,13 +1,14 @@
 import { getServerSession } from "next-auth/next";
 import { getGraphClient, getGraphClientForUser } from "@/lib/microsoftGraph";
 import { NextResponse } from "next/server";
+import { authOptions } from "../../auth/[...nextauth]/route";
 
 export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const startDateTime = searchParams.get("startDateTime");
     const endDateTime = searchParams.get("endDateTime");
     const userId = searchParams.get("userId");
-    const session: any = await getServerSession();
+    const session: any = await getServerSession(authOptions as any);
 
     let client;
     let targetEmail = userId || session?.user?.email || "me";
