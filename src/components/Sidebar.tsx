@@ -36,8 +36,8 @@ interface MenuItem {
 const menuItems: MenuItem[] = [
     { title: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
     { title: "Students", icon: Users, href: "/dashboard/students" },
-    { title: "Leads", icon: Target, href: "/dashboard/leads", feature: "leads" },
-    { title: "Social Connect", icon: Share2, href: "/dashboard/leads/integrations", feature: "leads" },
+    { title: "Leads", icon: Target, href: "/dashboard/leads" },
+    { title: "Social Connect", icon: Share2, href: "/dashboard/leads/integrations" },
     { title: "Batches", icon: GraduationCap, href: "/dashboard/batches" },
     { title: "Attendance", icon: Calendar, href: "/dashboard/attendance" },
     { title: "WhatsApp Center", icon: Send, href: "/dashboard/messaging" },

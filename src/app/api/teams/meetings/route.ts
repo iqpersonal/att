@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth/next";
 import { getGraphClient, getGraphClientForUser } from "@/lib/microsoftGraph";
 import { NextResponse } from "next/server";
-import { authOptions } from "../../auth/[...nextauth]/route";
+import { authOptions } from "@/lib/auth";
 
 export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
@@ -23,14 +23,19 @@ export async function GET(req: Request) {
             client = getGraphClient(session.accessToken);
         } else if (userId && userId.length > 5) {
             client = await getGraphClientForUser(userId);
-            const { doc, getDoc } = await import("firebase/firestore");
-            const { db } = await import("@/lib/firebase");
-            const userSnap = await getDoc(doc(db, "users", userId));
-            if (userSnap.exists()) {
-                const userData = userSnap.data();
-                targetEmail = userData?.email || userData?.microsoftEmail || userData?.microsoftTokens?.email || "me";
-                // CRITICAL: Ensure targetEmail is never the Firebase UID
-                if (targetEmail === userId) targetEmail = "me";
+            try {
+                const { getAdminDb } = await import("@/lib/firebaseAdmin");
+                const db = getAdminDb();
+                const userSnap = await db.collection("users").doc(userId).get();
+                if (userSnap.exists) {
+                    const userData = userSnap.data();
+                    targetEmail = userData?.email || userData?.microsoftEmail || userData?.microsoftTokens?.email || "me";
+                    // CRITICAL: Ensure targetEmail is never the Firebase UID
+                    if (targetEmail === userId) targetEmail = "me";
+                }
+            } catch (err) {
+                console.error("Error fetching user data using Admin SDK:", err);
+                targetEmail = "me"; // Fallback
             }
         } else {
             const { getAzureCredentials, getAppAccessToken } = await import("@/lib/azureAuth");
@@ -50,11 +55,30 @@ export async function GET(req: Request) {
 
         console.log(`[Meetings API] Target: ${targetEmail}, Tenant: ${tenantId}`);
 
-        const result = await client.api(`/users/${encodeURIComponent(targetEmail)}/calendar/calendarView`)
-            .query({ startDateTime, endDateTime })
-            .select("id,subject,start,end,onlineMeeting,webLink,isOnlineMeeting,organizer")
-            .top(50)
-            .get();
+        let result;
+        const info = { startDateTime, endDateTime };
+
+        try {
+            result = await client.api(`/users/${encodeURIComponent(targetEmail)}/calendar/calendarView`)
+                .query(info)
+                .select("id,subject,start,end,onlineMeeting,webLink,isOnlineMeeting,organizer")
+                .top(50)
+                .get();
+        } catch (error: any) {
+            // Retry logic for 401 Unauthorized
+            if (error.statusCode === 401 && userId && userId.length > 5) {
+                console.log("[Meetings API] 401 received, attempting token refresh...");
+                client = await getGraphClientForUser(userId, true);
+                result = await client.api(`/users/${encodeURIComponent(targetEmail)}/calendar/calendarView`)
+                    .query(info)
+                    .select("id,subject,start,end,onlineMeeting,webLink,isOnlineMeeting,organizer")
+                    .top(50)
+                    .get();
+            } else {
+                throw error;
+            }
+        }
+
 
         const onlineMeetings = (result.value || []).filter((event: any) =>
             event.isOnlineMeeting === true || event.onlineMeeting !== null
@@ -72,3 +96,4 @@ export async function GET(req: Request) {
         return NextResponse.json({ error: error.message || "Failed to fetch meetings" }, { status: error.statusCode || 500 });
     }
 }
+

@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth/next";
 import { getGraphClient, getGraphClientForUser } from "@/lib/microsoftGraph";
 import { NextResponse } from "next/server";
-import { authOptions } from "../../auth/[...nextauth]/route";
+import { authOptions } from "@/lib/auth";
 
 export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
@@ -31,18 +31,21 @@ export async function GET(req: Request) {
             try {
                 console.log(`[Attendance API] Attempting token lookup for userId: ${userId}`);
                 client = await getGraphClientForUser(userId);
-                const { doc, getDoc } = await import("firebase/firestore");
-                const { db } = await import("@/lib/firebase");
-                const userSnap = await getDoc(doc(db, "users", userId));
-                if (userSnap.exists()) {
+
+                // Use Admin SDK to avoid permission errors
+                const { getAdminDb } = await import("@/lib/firebaseAdmin");
+                const db = getAdminDb();
+                const userSnap = await db.collection("users").doc(userId).get();
+
+                if (userSnap.exists) {
                     const userData = userSnap.data();
                     targetEmail = userData?.email || userData?.microsoftEmail || userData?.microsoftTokens?.email || "me";
                     if (targetEmail === userId) targetEmail = "me";
                     mode = "user";
                     console.log(`[Attendance API] Resolved background targetEmail: ${targetEmail}`);
                 }
-            } catch (err) {
-                console.warn(`[Attendance API] User tokens failed/absent, falling back to app mode.`);
+            } catch (err: any) {
+                console.warn(`[Attendance API] User tokens failed/absent, falling back to app mode. Error: ${err.message}`);
             }
         }
 
@@ -118,18 +121,21 @@ export async function GET(req: Request) {
             const { getAzureCredentials } = await import("@/lib/azureAuth");
             const creds = await getAzureCredentials(tenantId);
             const searchEmails = new Set([
-                targetEmail.toLowerCase(),
+                targetEmail === "me" ? "me" : targetEmail.toLowerCase(),
                 mailboxEmail?.toLowerCase(),
                 organizerEmail?.toLowerCase(),
                 creds?.azureCoordinatorEmail?.toLowerCase()
-            ].filter(e => e && e !== "me") as string[]);
+            ].filter(e => e) as string[]);
 
             console.log(`[Attendance API] Exhaustive search in onlineMeetings for: ${Array.from(searchEmails).join(', ')}`);
 
-            for (const email of searchEmails) {
+            for (const email of Array.from(searchEmails)) {
                 try {
+                    const apiPath = email === "me" ? "/me/onlineMeetings" : `/users/${encodeURIComponent(email)}/onlineMeetings`;
+                    console.log(`[Attendance API] Searching at: ${apiPath}`);
+
                     // Method A: Direct Filter
-                    const filterRes = await client.api(`/users/${encodeURIComponent(email)}/onlineMeetings`)
+                    const filterRes = await client.api(apiPath)
                         .filter(`joinWebUrl eq '${joinUrl.split('?')[0].replace(/'/g, "''")}'`)
                         .get();
 
@@ -141,11 +147,14 @@ export async function GET(req: Request) {
                     }
 
                     // Method B: Manual Match (Top 50)
-                    const listRes = await client.api(`/users/${encodeURIComponent(email)}/onlineMeetings`).top(50).get();
-                    const targetBaseUrl = joinUrl.split('?')[0].replace(/\/0$/, '').replace(/\/$/, '').toLowerCase();
+                    const listRes = await client.api(apiPath).top(50).get();
+
+                    // Normalize target URL for comparison: lowercase, remove query params, remove trailing slash
+                    const targetBaseUrl = joinUrl.split('?')[0].replace(/\/$/, '').toLowerCase();
 
                     const match = (listRes.value || []).find((m: any) => {
-                        const mUrl = (m.joinWebUrl || m.joinUrl || "").split('?')[0].replace(/\/$/, '').toLowerCase();
+                        if (!m.joinWebUrl) return false;
+                        const mUrl = m.joinWebUrl.split('?')[0].replace(/\/$/, '').toLowerCase();
                         return mUrl === targetBaseUrl;
                     });
 
@@ -217,3 +226,4 @@ export async function GET(req: Request) {
         }, { status: error.statusCode || 500 });
     }
 }
+

@@ -6,7 +6,7 @@ import { WhatsAppModal } from "@/components/WhatsAppModal";
 import { AddLeadModal } from "@/components/AddLeadModal";
 import { LeadDetailsModal } from "@/components/LeadDetailsModal";
 import { db } from "@/lib/firebase";
-import { collection, query, where, getDocs, serverTimestamp, orderBy, doc, updateDoc, deleteDoc, addDoc } from "firebase/firestore";
+import { collection, query, where, orderBy, limit, startAfter, getDocs, serverTimestamp, doc, updateDoc, addDoc, QueryConstraint, QueryDocumentSnapshot } from "firebase/firestore";
 import { useAuth } from "@/context/AuthContext";
 import {
     Target,
@@ -31,7 +31,8 @@ import {
     AlertTriangle,
     Zap,
     Archive,
-    BarChart3
+    BarChart3,
+    ChevronDown
 } from "lucide-react";
 
 interface Lead {
@@ -50,12 +51,14 @@ interface Lead {
     studentId?: string;
 }
 
+const LEADS_PER_PAGE = 50;
+
 export default function LeadsPage() {
-    const { tenantId, features, role } = useAuth();
-    const isModuleEnabled = features.includes("leads") || role === "super-admin";
+    const { tenantId } = useAuth();
 
     const [leads, setLeads] = useState<Lead[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
     const [syncing, setSyncing] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedCampaign, setSelectedCampaign] = useState("all");
@@ -71,25 +74,76 @@ export default function LeadsPage() {
     const [sendingBulk, setSendingBulk] = useState(false);
     const [cleaning, setCleaning] = useState(false);
 
-    const fetchLeads = async () => {
+    // Pagination state
+    const [totalLeadsCount, setTotalLeadsCount] = useState(0);
+    const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot | null>(null);
+    const [hasMore, setHasMore] = useState(true);
+
+    const fetchTotalCount = async () => {
         if (!tenantId) return;
-        setLoading(true);
         try {
             const q = query(
                 collection(db, "leads"),
-                where("tenantId", "==", tenantId),
-                orderBy("createdAt", "desc")
+                where("tenantId", "==", tenantId)
             );
             const snapshot = await getDocs(q);
-            const leadList = snapshot.docs.map(doc => ({
+            setTotalLeadsCount(snapshot.size);
+        } catch (error) {
+            console.error("Error fetching total count:", error);
+        }
+    };
+
+    const fetchLeads = async (reset = true) => {
+        if (!tenantId) return;
+        
+        if (reset) {
+            setLoading(true);
+        } else {
+            setLoadingMore(true);
+        }
+
+        try {
+            const constraints: QueryConstraint[] = [
+                where("tenantId", "==", tenantId),
+                orderBy("createdAt", "desc"),
+                limit(LEADS_PER_PAGE + 1) // +1 to check if there are more
+            ];
+
+            if (!reset && lastDoc) {
+                constraints.push(startAfter(lastDoc));
+            }
+
+            const q = query(collection(db, "leads"), ...constraints);
+            const snapshot = await getDocs(q);
+            const docs = snapshot.docs;
+            
+            // Check if there are more leads beyond the limit
+            const hasMoreLeads = docs.length > LEADS_PER_PAGE;
+            const leadsToShow = docs.slice(0, LEADS_PER_PAGE);
+            
+            const leadList = leadsToShow.map(doc => ({
                 ...doc.data(),
                 id: doc.id
             })) as Lead[];
-            setLeads(leadList);
+
+            if (reset) {
+                setLeads(leadList);
+            } else {
+                setLeads(prev => [...prev, ...leadList]);
+            }
+
+            setHasMore(hasMoreLeads);
+            if (leadsToShow.length > 0) {
+                setLastDoc(leadsToShow[leadsToShow.length - 1]);
+            }
         } catch (error) {
             console.error("Error fetching leads:", error);
         } finally {
-            setLoading(false);
+            if (reset) {
+                setLoading(false);
+            } else {
+                setLoadingMore(false);
+            }
         }
     };
 
@@ -127,7 +181,7 @@ export default function LeadsPage() {
                 });
             }
             alert(`Succesfully archived ${staleLeads.length} leads.`);
-            fetchLeads();
+            fetchLeads(true);
         } catch (err: any) {
             alert(`Cleanup failed: ${err.message}`);
         } finally {
@@ -154,7 +208,7 @@ export default function LeadsPage() {
             if (data.success) {
                 alert(data.message);
                 setSelectedLeads([]);
-                fetchLeads();
+                fetchLeads(true);
             } else {
                 alert(`Error: ${data.error}`);
             }
@@ -178,7 +232,8 @@ export default function LeadsPage() {
             const data = await res.json();
             if (data.success) {
                 alert(data.message || "Sync completed successfully.");
-                fetchLeads();
+                fetchLeads(true);
+                fetchTotalCount();
             } else {
                 alert(`Sync failed: ${data.error}`);
             }
@@ -208,7 +263,7 @@ export default function LeadsPage() {
                 createdAt: serverTimestamp()
             });
 
-            fetchLeads();
+            fetchLeads(true);
             setActionMenuId(null);
         } catch (error) {
             console.error("Error updating status:", error);
@@ -227,17 +282,17 @@ export default function LeadsPage() {
     };
 
     useEffect(() => {
-        if (!tenantId || !isModuleEnabled) {
+        if (!tenantId) {
             setLoading(false);
             return;
         }
-        fetchLeads();
-    }, [tenantId, isModuleEnabled]);
+        fetchLeads(true);
+        fetchTotalCount();
+    }, [tenantId]);
 
     // Analytics
-    const totalLeads = leads.length;
     const closedLeads = leads.filter(l => l.status === "closed").length;
-    const conversionRate = totalLeads > 0 ? ((closedLeads / totalLeads) * 100).toFixed(1) : "0.0";
+    const conversionRate = totalLeadsCount > 0 ? ((closedLeads / totalLeadsCount) * 100).toFixed(1) : "0.0";
     const staleCount = leads.filter(isLeadStale).length;
 
     // Filters logic
@@ -267,24 +322,6 @@ export default function LeadsPage() {
         else setSelectedLeads(filteredLeads.map(l => l.id));
     };
 
-    if (!isModuleEnabled && !loading) {
-        return (
-            <div className="flex flex-col items-center justify-center text-center space-y-8 py-12">
-                <div className="h-32 w-32 bg-primary/10 rounded-[40px] flex items-center justify-center text-primary animate-bounce">
-                    <Crown className="h-16 w-16" />
-                </div>
-                <div className="max-w-xl space-y-4">
-                    <h1 className="text-4xl font-black text-[#0D121F] font-outfit tracking-tight">Premium Module: Lead Management</h1>
-                    <p className="text-slate-500 font-medium text-lg leading-relaxed">
-                        Unlock advanced pipeline tracking, social media lead sync, and conversion analytics.
-                    </p>
-                </div>
-                <button className="px-12 py-5 bg-primary text-white rounded-[24px] font-black shadow-2xl shadow-primary/30 hover:scale-105 active:scale-95 transition-all text-lg">
-                    Contact Support to Unlock
-                </button>
-            </div>
-        );
-    }
 
     return (
         <div className="p-12 relative min-h-screen">
@@ -339,7 +376,7 @@ export default function LeadsPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-12">
                 {[
-                    { label: "Pipeline Total", count: totalLeads, icon: Target, color: "bg-indigo-50 text-indigo-500", trend: "Active list" },
+                    { label: "Pipeline Total", count: totalLeadsCount, icon: Target, color: "bg-indigo-50 text-indigo-500", trend: "Active list" },
                     { label: "Conversion", count: `${conversionRate}%`, icon: TrendingUp, color: "bg-emerald-50 text-emerald-500", trend: "Closed/Won" },
                     { label: "Needs Attention", count: staleCount, icon: AlertTriangle, color: "bg-red-50 text-red-500", trend: "Cold leads (+24h)" },
                     { label: "Meta Linked", count: campaigns.length, icon: Share2, color: "bg-blue-50 text-blue-500", trend: "Active ads" }
@@ -387,7 +424,7 @@ export default function LeadsPage() {
                     )}
                 </div>
                 <span className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-                    <Hash className="h-3 w-3" /> Showing {filteredLeads.length} leads
+                    <Hash className="h-3 w-3" /> Showing {filteredLeads.length} of {totalLeadsCount}
                 </span>
             </div>
 
@@ -523,6 +560,29 @@ export default function LeadsPage() {
                 </table>
             </div>
 
+            {/* Load More Button */}
+            {hasMore && (
+                <div className="flex justify-center mb-20">
+                    <button
+                        onClick={() => fetchLeads(false)}
+                        disabled={loadingMore}
+                        className="px-8 py-4 bg-white text-primary border-2 border-primary rounded-[28px] font-bold flex items-center gap-2 hover:bg-primary/5 transition-all cursor-pointer disabled:opacity-50"
+                    >
+                        {loadingMore ? (
+                            <>
+                                <Loader2 className="h-5 w-5 animate-spin" />
+                                Loading...
+                            </>
+                        ) : (
+                            <>
+                                <ChevronDown className="h-5 w-5" />
+                                Load More Leads
+                            </>
+                        )}
+                    </button>
+                </div>
+            )}
+
             {/* Modals */}
             {whatsappLead && (
                 <WhatsAppModal
@@ -547,3 +607,10 @@ export default function LeadsPage() {
         </div>
     );
 }
+
+
+
+
+
+
+

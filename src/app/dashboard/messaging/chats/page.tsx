@@ -14,6 +14,10 @@ import {
     doc,
     updateDoc,
     limit,
+    getDocs,
+    startAfter,
+    QueryConstraint,
+    QueryDocumentSnapshot
 } from "firebase/firestore";
 import {
     Search,
@@ -31,7 +35,8 @@ import {
     Smile,
     ChevronLeft,
     Check,
-    CheckCheck
+    CheckCheck,
+    ChevronDown
 } from "lucide-react";
 import { format } from "date-fns";
 import { sendWhatsAppFreeText } from "@/lib/messaging";
@@ -55,9 +60,14 @@ interface Conversation {
     updatedAt: any;
 }
 
+const CONVERSATIONS_PER_PAGE = 50;
+
 export default function ChatsPage() {
     const { tenantId, user } = useAuth();
     const [conversations, setConversations] = useState<Conversation[]>([]);
+    const [lastDoc, setLastDoc] = useState<QueryDocumentSnapshot | null>(null);
+    const [hasMore, setHasMore] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
     const [selectedConvo, setSelectedConvo] = useState<Conversation | null>(null);
     const [messages, setMessages] = useState<Message[]>([]);
     const [newMessage, setNewMessage] = useState("");
@@ -66,34 +76,55 @@ export default function ChatsPage() {
     const [searchQuery, setSearchQuery] = useState("");
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    // 1. Fetch Conversations
-    useEffect(() => {
+    const fetchConversations = async (reset = true) => {
         if (!tenantId) return;
-
-        const q = query(
-            collection(db, "tenants", tenantId, "conversations"),
-            orderBy("updatedAt", "desc")
-        );
-
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const data = snapshot.docs.map(doc => ({
+        if (!reset) setLoadingMore(true);
+        try {
+            const constraints: QueryConstraint[] = [
+                orderBy('updatedAt', 'desc'),
+                limit(CONVERSATIONS_PER_PAGE + 1)
+            ];
+            if (!reset && lastDoc) {
+                constraints.push(startAfter(lastDoc));
+            }
+            const q = query(collection(db, 'tenants', tenantId, 'conversations'), ...constraints);
+            const snapshot = await getDocs(q);
+            const docs = snapshot.docs;
+            const hasMoreItems = docs.length > CONVERSATIONS_PER_PAGE;
+            const itemsToShow = docs.slice(0, CONVERSATIONS_PER_PAGE);
+            const convoList = itemsToShow.map(doc => ({
                 id: doc.id,
                 ...doc.data()
             })) as Conversation[];
-            setConversations(data);
+            if (reset) {
+                setConversations(convoList);
+            } else {
+                setConversations(prev => [...prev, ...convoList]);
+            }
+            setHasMore(hasMoreItems);
+            if (itemsToShow.length > 0) {
+                setLastDoc(itemsToShow[itemsToShow.length - 1]);
+            }
             setLoading(false);
-        });
+        } catch (error) {
+            console.error('Error fetching conversations:', error);
+            setLoading(false);
+        } finally {
+            if (!reset) setLoadingMore(false);
+        }
+    };
 
-        return () => unsubscribe();
+    useEffect(() => {
+        if (!tenantId) return;
+        fetchConversations(true);
     }, [tenantId]);
 
-    // 2. Fetch Messages for selected conversation
     useEffect(() => {
         if (!tenantId || !selectedConvo) return;
 
         const q = query(
-            collection(db, "tenants", tenantId, "conversations", selectedConvo.id, "messages"),
-            orderBy("timestamp", "asc"),
+            collection(db, 'tenants', tenantId, 'conversations', selectedConvo.id, 'messages'),
+            orderBy('timestamp', 'asc'),
             limit(50)
         );
 
@@ -104,9 +135,8 @@ export default function ChatsPage() {
             })) as Message[];
             setMessages(data);
 
-            // Mark as read if unreadCount > 0
             if (selectedConvo.unreadCount > 0) {
-                updateDoc(doc(db, "tenants", tenantId, "conversations", selectedConvo.id), {
+                updateDoc(doc(db, 'tenants', tenantId, 'conversations', selectedConvo.id), {
                     unreadCount: 0
                 });
             }
@@ -115,9 +145,8 @@ export default function ChatsPage() {
         return () => unsubscribe();
     }, [tenantId, selectedConvo]);
 
-    // Scroll to bottom
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
     const handleSendMessage = async (e?: React.FormEvent) => {
@@ -125,18 +154,17 @@ export default function ChatsPage() {
         if (!newMessage.trim() || !selectedConvo || !tenantId) return;
 
         const text = newMessage;
-        setNewMessage("");
+        setNewMessage('');
         setSending(true);
 
         try {
             const result = await sendWhatsAppFreeText(selectedConvo.contactPhone, text, tenantId);
 
             if (result.success) {
-                const convoRef = doc(db, "tenants", tenantId, "conversations", selectedConvo.id);
+                const convoRef = doc(db, 'tenants', tenantId, 'conversations', selectedConvo.id);
                 const msgId = result.data?.messages?.[0]?.id;
 
-                // 1. Add Message to sub-collection
-                await addDoc(collection(convoRef, "messages"), {
+                await addDoc(collection(convoRef, 'messages'), {
                     text,
                     type: 'outbound',
                     status: 'sent',
@@ -144,7 +172,6 @@ export default function ChatsPage() {
                     timestamp: serverTimestamp()
                 });
 
-                // 2. Update Conversation Metadata
                 await updateDoc(convoRef, {
                     lastMessage: text,
                     updatedAt: serverTimestamp()
@@ -153,8 +180,8 @@ export default function ChatsPage() {
                 alert(`Error: ${result.error}`);
             }
         } catch (err: any) {
-            console.error("Failed to send message:", err);
-            alert("Failed to send message. Is the 24h window open?");
+            console.error('Failed to send message:', err);
+            alert('Failed to send message. Is the 24h window open?');
         } finally {
             setSending(false);
         }
@@ -175,7 +202,6 @@ export default function ChatsPage() {
 
     return (
         <div className="flex h-[calc(100vh-100px)] gap-6 p-6 overflow-hidden">
-            {/* Left: Contact List */}
             <div className="w-80 lg:w-96 bg-white rounded-[32px] border border-slate-100 flex flex-col overflow-hidden shadow-sm">
                 <div className="p-6 border-b border-slate-50">
                     <h1 className="text-xl font-bold text-slate-900 mb-4 font-outfit">Messages</h1>
@@ -198,45 +224,62 @@ export default function ChatsPage() {
                             <p className="text-xs font-bold uppercase tracking-widest">No chats found</p>
                         </div>
                     ) : (
-                        filteredConversations.map(convo => (
-                            <button
-                                key={convo.id}
-                                onClick={() => setSelectedConvo(convo)}
-                                className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all ${selectedConvo?.id === convo.id
-                                        ? "bg-primary/5 border border-primary/20 shadow-sm"
-                                        : "hover:bg-slate-50 border border-transparent"
-                                    }`}
-                            >
-                                <div className="h-12 w-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 shrink-0 uppercase font-bold border-2 border-white shadow-sm">
-                                    {convo.contactName.charAt(0)}
-                                </div>
-                                <div className="flex-1 text-left min-w-0">
-                                    <div className="flex justify-between items-center mb-1">
-                                        <p className="font-bold text-slate-900 truncate">{convo.contactName}</p>
-                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                                            {convo.updatedAt?.toDate ? format(convo.updatedAt.toDate(), "h:mm a") : ""}
-                                        </span>
+                        <>
+                            {filteredConversations.map(convo => (
+                                <button
+                                    key={convo.id}
+                                    onClick={() => setSelectedConvo(convo)}
+                                    className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all ${selectedConvo?.id === convo.id
+                                            ? 'bg-primary/5 border border-primary/20 shadow-sm'
+                                            : 'hover:bg-slate-50 border border-transparent'
+                                        }`}
+                                >
+                                    <div className="h-12 w-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 shrink-0 uppercase font-bold border-2 border-white shadow-sm">
+                                        {convo.contactName.charAt(0)}
                                     </div>
-                                    <div className="flex justify-between items-center">
-                                        <p className="text-xs text-slate-500 truncate font-medium">{convo.lastMessage}</p>
-                                        {convo.unreadCount > 0 && (
-                                            <span className="h-5 w-5 bg-primary text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-lg shadow-primary/30">
-                                                {convo.unreadCount}
+                                    <div className="flex-1 text-left min-w-0">
+                                        <div className="flex justify-between items-center mb-1">
+                                            <p className="font-bold text-slate-900 truncate">{convo.contactName}</p>
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                                {convo.updatedAt?.toDate ? format(convo.updatedAt.toDate(), 'h:mm a') : ''}
                                             </span>
-                                        )}
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                            <p className="text-xs text-slate-500 truncate font-medium">{convo.lastMessage}</p>
+                                            {convo.unreadCount > 0 && (
+                                                <span className="h-5 w-5 bg-primary text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-lg shadow-primary/30">
+                                                    {convo.unreadCount}
+                                                </span>
+                                            )}
+                                        </div>
                                     </div>
+                                </button>
+                            ))}
+                            {hasMore && (
+                                <div className="flex justify-center pt-4">
+                                    <button onClick={() => fetchConversations(false)} disabled={loadingMore} className="px-4 py-2 bg-white text-primary border border-primary/20 rounded-xl font-bold text-xs flex items-center gap-2 hover:bg-primary/5 transition-all disabled:opacity-50">
+                                        {loadingMore ? (
+                                            <>
+                                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                                Loading...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <ChevronDown className="h-3.5 w-3.5" />
+                                                Load More
+                                            </>
+                                        )}
+                                    </button>
                                 </div>
-                            </button>
-                        ))
+                            )}
+                        </>
                     )}
                 </div>
             </div>
 
-            {/* Right: Chat Window */}
             <div className="flex-1 bg-white rounded-[40px] border border-slate-100 shadow-sm flex flex-col overflow-hidden relative">
                 {selectedConvo ? (
                     <>
-                        {/* Header */}
                         <div className="p-6 border-b border-slate-50 flex items-center justify-between bg-white z-10 shadow-[0_4px_12px_rgba(0,0,0,0.01)]">
                             <div className="flex items-center gap-4">
                                 <div className="h-12 w-12 bg-primary/10 rounded-full flex items-center justify-center text-primary font-bold shadow-inner">
@@ -257,19 +300,17 @@ export default function ChatsPage() {
                             </div>
                         </div>
 
-                        {/* Messages */}
                         <div className="flex-1 overflow-y-auto p-8 space-y-6 bg-slate-50/30">
                             {messages.map((msg, idx) => {
                                 const isOutbound = msg.type === 'outbound';
-                                const showTimestamp = idx === 0 ||
-                                    (messages[idx - 1] && msg.timestamp?.seconds - messages[idx - 1].timestamp?.seconds > 300);
+                                const showTimestamp = idx === 0 || (messages[idx - 1] && msg.timestamp?.seconds - messages[idx - 1].timestamp?.seconds > 300);
 
                                 return (
                                     <div key={msg.id} className="space-y-4">
                                         {showTimestamp && (
                                             <div className="flex justify-center my-6">
                                                 <span className="px-4 py-1.5 bg-white shadow-sm border border-slate-100 rounded-full text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                                                    {msg.timestamp?.toDate ? format(msg.timestamp.toDate(), "EEEE, MMM d • h:mm a") : "Just now"}
+                                                    {msg.timestamp?.toDate ? format(msg.timestamp.toDate(), 'EEEE, MMM d  h:mm a') : 'Just now'}
                                                 </span>
                                             </div>
                                         )}
@@ -283,7 +324,7 @@ export default function ChatsPage() {
                                                 </div>
                                                 <div className={`flex items-center gap-1.5 mt-2 ${isOutbound ? 'justify-end' : 'justify-start'}`}>
                                                     <span className="text-[10px] font-bold text-slate-400 pr-1">
-                                                        {msg.timestamp?.toDate ? format(msg.timestamp.toDate(), "h:mm a") : ""}
+                                                        {msg.timestamp?.toDate ? format(msg.timestamp.toDate(), 'h:mm a') : ''}
                                                     </span>
                                                     {isOutbound && (
                                                         msg.status === 'read' ? <CheckCheck className="h-3.5 w-3.5 text-blue-500" /> :
@@ -299,7 +340,6 @@ export default function ChatsPage() {
                             <div ref={messagesEndRef} />
                         </div>
 
-                        {/* Input Area */}
                         <div className="p-6 bg-white border-t border-slate-50">
                             <form onSubmit={handleSendMessage} className="flex items-center gap-4">
                                 <button type="button" className="p-3 hover:bg-slate-50 rounded-2xl transition-colors text-slate-400"><Paperclip className="h-5 w-5" /></button>

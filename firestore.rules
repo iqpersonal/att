@@ -8,7 +8,13 @@ service cloud.firestore {
     function isOwner(userId) {
       return request.auth.uid == userId;
     }
+    
+    function isTenantMember(tenantId) {
+      return exists(/databases/(default)/documents/tenants/$(tenantId)/members/$(request.auth.uid)) ||
+             get(/databases/(default)/documents/tenants/$(tenantId)).data.ownerId == request.auth.uid;
+    }
 
+    // Users collection
     match /users/{userId} {
       allow read: if isOwner(userId);
       allow create: if isSignedIn() && isOwner(userId);
@@ -17,10 +23,68 @@ service cloud.firestore {
           .hasAny(['subscription_tier', 'credits_remaining', 'email']);
     }
 
+    // History collection
     match /history/{docId} {
       allow read: if isOwner(resource.data.userId);
       allow create: if isSignedIn() && isOwner(request.resource.data.userId);
       allow delete: if isOwner(resource.data.userId);
+    }
+
+    // Root leads collection (for app-level access)
+    match /leads/{leadId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn();
+    }
+
+    // Tenants collection - Root document read for initialization
+    match /tenants/{tenantId} {
+      allow read: if isSignedIn() && (
+        isTenantMember(tenantId) ||
+        get(/databases/(default)/documents/users/$(request.auth.uid)).data.tenantId == tenantId
+      );
+      allow write: if isTenantMember(tenantId);
+
+      match /leads/{leadId} {
+        allow read: if isTenantMember(tenantId);
+        allow create: if isSignedIn() && isTenantMember(tenantId);
+        allow update: if isTenantMember(tenantId);
+        allow delete: if isTenantMember(tenantId);
+      }
+
+      match /students/{studentId} {
+        allow read: if isTenantMember(tenantId);
+        allow create: if isSignedIn() && isTenantMember(tenantId);
+        allow update: if isTenantMember(tenantId);
+        allow delete: if isTenantMember(tenantId);
+      }
+
+      match /conversations/{docId} {
+        allow read: if isTenantMember(tenantId);
+        allow create: if isSignedIn() && isTenantMember(tenantId);
+        allow update: if isTenantMember(tenantId);
+        match /messages/{msgId} {
+          allow read: if isTenantMember(tenantId);
+          allow create: if isSignedIn() && isTenantMember(tenantId);
+          allow update: if isTenantMember(tenantId);
+        }
+      }
+
+      match /config/{docId} {
+        allow read: if isTenantMember(tenantId);
+        allow write: if isTenantMember(tenantId);
+      }
+
+      match /integrations/{docId} {
+        allow read: if isTenantMember(tenantId);
+        allow write: if isTenantMember(tenantId);
+      }
+
+      match /members/{userId} {
+        allow read: if isTenantMember(tenantId);
+        allow write: if isTenantMember(tenantId);
+      }
     }
   }
 }
