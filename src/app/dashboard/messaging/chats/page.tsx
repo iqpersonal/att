@@ -233,7 +233,7 @@ export default function ChatsPage() {
                                         }`}
                                 >
                                     <div className="h-12 w-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 shrink-0 uppercase font-bold border-2 border-white shadow-sm">
-                                        {convo.contactName.charAt(0)}
+                                        {(convo.contactName ?? "?").charAt(0)}
                                     </div>
                                     <div className="flex-1 text-left min-w-0">
                                         <div className="flex justify-between items-center mb-1">
@@ -281,7 +281,7 @@ export default function ChatsPage() {
                         <div className="p-6 border-b border-slate-50 flex items-center justify-between bg-white z-10 shadow-[0_4px_12px_rgba(0,0,0,0.01)]">
                             <div className="flex items-center gap-4">
                                 <div className="h-12 w-12 bg-primary/10 rounded-full flex items-center justify-center text-primary font-bold shadow-inner">
-                                    {selectedConvo.contactName.charAt(0)}
+                                    {selected(convo.contactName ?? "?").charAt(0)}
                                 </div>
                                 <div>
                                     <h2 className="font-bold text-slate-900 font-outfit">{selectedConvo.contactName}</h2>
@@ -379,4 +379,5 @@ export default function ChatsPage() {
         </div>
     );
 }
+
 
