@@ -187,9 +187,7 @@ export default function ChatsPage() {
         }
     };
 
-    const filteredConversations = conversations.filter(c =>
-        c.contactName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.contactPhone.includes(searchQuery)
+    const filteredConversations = conversations.filter(c => (c.contactName?.toLowerCase() ?? "").includes(searchQuery.toLowerCase()) || (c.contactPhone ?? "").includes(searchQuery)
     );
 
     if (loading) {
@@ -381,3 +379,4 @@ export default function ChatsPage() {
         </div>
     );
 }
+
