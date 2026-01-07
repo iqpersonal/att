@@ -237,13 +237,13 @@ export default function ChatsPage() {
                                     </div>
                                     <div className="flex-1 text-left min-w-0">
                                         <div className="flex justify-between items-center mb-1">
-                                            <p className="font-bold text-slate-900 truncate">{convo.contactName}</p>
+                                            <p className="font-bold text-slate-900 truncate">{convo.contactName ?? "Unknown"}</p>
                                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                                                 {convo.updatedAt?.toDate ? format(convo.updatedAt.toDate(), 'h:mm a') : ''}
                                             </span>
                                         </div>
                                         <div className="flex justify-between items-center">
-                                            <p className="text-xs text-slate-500 truncate font-medium">{convo.lastMessage}</p>
+                                            <p className="text-xs text-slate-500 truncate font-medium">{convo.lastMessage ?? "No message"}</p>
                                             {convo.unreadCount > 0 && (
                                                 <span className="h-5 w-5 bg-primary text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-lg shadow-primary/30">
                                                     {convo.unreadCount}
@@ -281,10 +281,10 @@ export default function ChatsPage() {
                         <div className="p-6 border-b border-slate-50 flex items-center justify-between bg-white z-10 shadow-[0_4px_12px_rgba(0,0,0,0.01)]">
                             <div className="flex items-center gap-4">
                                 <div className="h-12 w-12 bg-primary/10 rounded-full flex items-center justify-center text-primary font-bold shadow-inner">
-                                    {selected(convo.contactName ?? "?").charAt(0)}
+                                    {(selectedConvo.contactName ?? "?").charAt(0)}
                                 </div>
                                 <div>
-                                    <h2 className="font-bold text-slate-900 font-outfit">{selectedConvo.contactName}</h2>
+                                    <h2 className="font-bold text-slate-900 font-outfit">{selectedConvo.contactName ?? "Unknown"}</h2>
                                     <p className="text-xs text-emerald-500 font-bold uppercase tracking-widest flex items-center gap-1.5">
                                         <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                                         Active
@@ -379,5 +379,6 @@ export default function ChatsPage() {
         </div>
     );
 }
+
 
 
