@@ -102,7 +102,8 @@ export default function AttendancePage() {
         setLoading(true);
         try {
             const params = new URLSearchParams({
-                tenantId: tenantId || "studio-school-beta"
+                tenantId: tenantId || "studio-school-beta",
+                fetchAll: "true"
             });
             const res = await fetch(`/api/teams/meetings?${params.toString()}`);
             const data = await res.json();
