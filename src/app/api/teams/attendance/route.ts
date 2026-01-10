@@ -1,3 +1,5 @@
+﻿export const dynamic = 'force-dynamic';
+
 import { getServerSession } from "next-auth/next";
 import { getGraphClient, getGraphClientForUser } from "@/lib/microsoftGraph";
 import { NextResponse } from "next/server";
@@ -226,4 +228,5 @@ export async function GET(req: Request) {
         }, { status: error.statusCode || 500 });
     }
 }
+
 
