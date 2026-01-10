@@ -213,7 +213,12 @@ export default function AttendancePage() {
             }
 
             const data = await res.json();
-            setBackendMessage(data.message || null);
+            // Check for "Meeting Tracker Not Found" error
+            if (data.error === "Meeting Tracker Not Found") {
+                setBackendMessage(" Attendance tracking not yet available - Meeting host needs to join the Teams meeting first");
+            } else {
+                setBackendMessage(data.message || null);
+            }
             const formattedParticipants = (data.attendanceRecords || []).map((p: any) => ({
                 ...p,
                 email: p.emailAddress || p.email // Ensure consistency
@@ -481,3 +486,6 @@ export default function AttendancePage() {
         </div>
     );
 }
+
+
+
