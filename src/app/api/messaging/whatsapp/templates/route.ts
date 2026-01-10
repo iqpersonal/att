@@ -1,3 +1,5 @@
+﻿export const dynamic = 'force-dynamic';
+
 import { NextResponse } from "next/server";
 import { getAdminDb } from "@/lib/firebaseAdmin";
 
@@ -81,3 +83,4 @@ export async function GET(req: Request) {
         return NextResponse.json({ success: false, error: error.message || "Internal server error" }, { status: 500 });
     }
 }
+
