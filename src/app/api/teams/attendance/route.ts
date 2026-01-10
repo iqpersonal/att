@@ -1,4 +1,5 @@
-﻿export const dynamic = 'force-dynamic';
+﻿// Attendance API Route - Teams Meeting Attendance Tracking
+export const dynamic = 'force-dynamic';
 
 import { getServerSession } from "next-auth/next";
 import { getGraphClient, getGraphClientForUser } from "@/lib/microsoftGraph";
@@ -228,5 +229,6 @@ export async function GET(req: Request) {
         }, { status: error.statusCode || 500 });
     }
 }
+
 
 
