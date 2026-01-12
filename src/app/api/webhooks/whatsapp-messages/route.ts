@@ -31,11 +31,15 @@ export async function GET(req: NextRequest) {
     const token = searchParams.get("hub.verify_token");
     const challenge = searchParams.get("hub.challenge");
 
-    console.log(`[WhatsApp Webhook] Mode: ${mode}, Token Match: ${token === WEBHOOK_VERIFY_TOKEN}`);
+    console.log(`[WhatsApp Webhook] Mode: ${mode}, Token Match: ${token === WEBHOOK_VERIFY_TOKEN}, Challenge: ${challenge}`);
 
     if (mode === "subscribe" && token === WEBHOOK_VERIFY_TOKEN) {
         console.log("[WhatsApp Webhook] Webhook verified successfully!");
-        return new NextResponse(challenge, { status: 200 });
+        // Meta expects the challenge value as plain text
+        return new NextResponse(challenge, { 
+            status: 200,
+            headers: { "content-type": "text/plain" }
+        });
     }
 
     console.warn("[WhatsApp Webhook] Webhook verification failed - invalid token");
@@ -217,6 +221,9 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: String(error) }, { status: 500 });
     }
 }
+
+
+
 
 
 
