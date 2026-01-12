@@ -122,27 +122,44 @@ export default function ChatsPage() {
     useEffect(() => {
         if (!tenantId || !selectedConvo) return;
 
+        console.log("[Chat] Setting up listener for:", { convoId: selectedConvo.id, tenantId });
+
         const q = query(
             collection(db, "tenants", tenantId, "conversations", selectedConvo.id, "messages"),
             orderBy("timestamp", "asc"),
             limit(50)
         );
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const data = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            })) as Message[];
-            setMessages(data);
+        const unsubscribe = onSnapshot(
+            q,
+            (snapshot) => {
+                console.log("[Chat] Listener fired, docs count:", snapshot.docs.length);
+                const data = snapshot.docs.map(doc => {
+                    const docData = doc.data();
+                    console.log("[Chat] Message doc:", { id: doc.id, text: docData.text, type: docData.type, timestamp: docData.timestamp });
+                    return {
+                        id: doc.id,
+                        ...docData
+                    };
+                }) as Message[];
+                console.log("[Chat] Updating messages state with", data.length, "messages");
+                setMessages(data);
 
-            if (selectedConvo.unreadCount > 0) {
-                updateDoc(doc(db, "tenants", tenantId, "conversations", selectedConvo.id), {
-                    unreadCount: 0
-                });
+                if (selectedConvo.unreadCount > 0) {
+                    updateDoc(doc(db, "tenants", tenantId, "conversations", selectedConvo.id), {
+                        unreadCount: 0
+                    });
+                }
+            },
+            (error) => {
+                console.error("[Chat] Listener error:", error);
             }
-        });
+        );
 
-        return () => unsubscribe();
+        return () => {
+            console.log("[Chat] Unsubscribing from listener");
+            unsubscribe();
+        };
     }, [tenantId, selectedConvo]);
 
     useEffect(() => {
@@ -394,5 +411,6 @@ export default function ChatsPage() {
         </div>
     );
 }
+
 
 
