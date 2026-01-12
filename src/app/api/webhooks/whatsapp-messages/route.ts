@@ -9,16 +9,33 @@ const WEBHOOK_VERIFY_TOKEN = process.env.WHATSAPP_WEBHOOK_TOKEN || "whatsapp_ver
 async function findTenantByWabaId(wabaId: string) {
     console.log(`[WhatsApp Webhook] Searching for tenant with WABA ID: ${wabaId}`);
     const adminDb = getAdminDb();
+    
+    // First, try to find by WABA ID in config/whatsapp
     const snapshot = await adminDb.collection("tenants").get();
 
     for (const tenantDoc of snapshot.docs) {
+        // Check old path: tenants/{id}/config/whatsapp
         const configRef = adminDb.doc(`tenants/${tenantDoc.id}/config/whatsapp`);
         const configSnap = await configRef.get();
 
         if (configSnap.exists && configSnap.data()?.wabaId === wabaId) {
             return { tenantId: tenantDoc.id, config: configSnap.data() };
         }
+        
+        // Check new path: tenants/{id}/integrations/meta
+        const metaRef = adminDb.doc(`tenants/${tenantDoc.id}/integrations/meta`);
+        const metaSnap = await metaRef.get();
+        
+        if (metaSnap.exists) {
+            const wabaIdFromMeta = metaSnap.data()?.wabaId;
+            if (wabaIdFromMeta === wabaId) {
+                console.log(`[WhatsApp Webhook] Found WABA ID in integrations/meta for tenant: ${tenantDoc.id}`);
+                return { tenantId: tenantDoc.id, config: metaSnap.data() };
+            }
+        }
     }
+    
+    console.warn(`[WhatsApp Webhook] No tenant found for WABA ID: ${wabaId}`);
     return null;
 }
 
@@ -221,6 +238,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: String(error) }, { status: 500 });
     }
 }
+
 
 
 
