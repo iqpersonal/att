@@ -139,6 +139,7 @@ export default function ChatsPage() {
                     console.log("[Chat] Message doc:", { id: doc.id, text: docData.text, type: docData.type, timestamp: docData.timestamp });
                     return {
                         id: doc.id,
+                        text: docData.text || docData.message,  // Support both old (message) and new (text) field names
                         ...docData
                     };
                 }) as Message[];
@@ -417,6 +418,7 @@ export default function ChatsPage() {
         </div>
     );
 }
+
 
 
 
