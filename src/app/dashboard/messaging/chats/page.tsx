@@ -163,16 +163,15 @@ export default function ChatsPage() {
     }, [tenantId, selectedConvo]);
 
     useEffect(() => {
-        console.log("[Chat] *** AUTO-SCROLL EFFECT FIRED *** messages count:", messages.length, "ref exists:", !!messagesEndRef.current);
-        if (messagesEndRef.current) {
-            console.log("[Chat] Attempting scrollIntoView...");
-            messagesEndRef.current.scrollIntoView({ behavior: "auto" });
-            console.log("[Chat] ScrollIntoView completed");
-        } else {
-            console.warn("[Chat] messagesEndRef is null!");
+        // Find the messages container and scroll to bottom
+        const messagesContainer = document.querySelector('[data-messages-container]');
+        if (messagesContainer) {
+            console.log("[Chat] *** AUTO-SCROLL EFFECT FIRED *** messages count:", messages.length);
+            // Scroll the container, not the ref
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            console.log("[Chat] Scrolled container to bottom, height:", messagesContainer.scrollHeight);
         }
     }, [messages]);
-
     const handleSendMessage = async (e?: React.FormEvent) => {
         e?.preventDefault();
         if (!newMessage.trim() || !selectedConvo || !tenantId) return;
@@ -337,7 +336,7 @@ export default function ChatsPage() {
                             </div>
                         </div>
 
-                        <div className="flex-1 overflow-y-auto p-8 space-y-6 bg-slate-50/30">
+                        <div data-messages-container className="flex-1 overflow-y-auto p-8 space-y-6 bg-slate-50/30">
                             {messages.map((msg, idx) => {
                                 const isOutbound = msg.type === "outbound";
                                 const showTimestamp = idx === 0 || (messages[idx - 1] && msg.timestamp?.seconds - messages[idx - 1].timestamp?.seconds > 300);
@@ -418,6 +417,8 @@ export default function ChatsPage() {
         </div>
     );
 }
+
+
 
 
 
