@@ -163,7 +163,14 @@ export default function ChatsPage() {
     }, [tenantId, selectedConvo]);
 
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        console.log("[Chat] *** AUTO-SCROLL EFFECT FIRED *** messages count:", messages.length, "ref exists:", !!messagesEndRef.current);
+        if (messagesEndRef.current) {
+            console.log("[Chat] Attempting scrollIntoView...");
+            messagesEndRef.current.scrollIntoView({ behavior: "auto" });
+            console.log("[Chat] ScrollIntoView completed");
+        } else {
+            console.warn("[Chat] messagesEndRef is null!");
+        }
     }, [messages]);
 
     const handleSendMessage = async (e?: React.FormEvent) => {
@@ -411,6 +418,7 @@ export default function ChatsPage() {
         </div>
     );
 }
+
 
 
 
