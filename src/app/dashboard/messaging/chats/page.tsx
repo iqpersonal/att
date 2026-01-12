@@ -158,29 +158,38 @@ export default function ChatsPage() {
         setSending(true);
 
         try {
+            console.log("[Chat] Sending message:", { to: selectedConvo.participantPhone, text, tenantId });
             const result = await sendWhatsAppFreeText(selectedConvo.participantPhone, text, tenantId);
+            console.log("[Chat] Send result:", result);
 
             if (result.success) {
                 const convoRef = doc(db, "tenants", tenantId, "conversations", selectedConvo.id);
                 const msgId = result.data?.messages?.[0]?.id;
 
-                await addDoc(collection(convoRef, "messages"), {
+                console.log("[Chat] Saving to Firestore:", { convoRef: convoRef.path, msgId, text });
+                
+                const docRef = await addDoc(collection(convoRef, "messages"), {
                     text,
                     type: "outbound",
                     status: "sent",
                     metaId: msgId,
                     timestamp: serverTimestamp()
                 });
+                
+                console.log("[Chat] Message saved successfully:", docRef.id);
 
                 await updateDoc(convoRef, {
                     lastMessage: text,
                     updatedAt: serverTimestamp()
                 });
+                
+                console.log("[Chat] Conversation updated");
             } else {
-                alert(`Error: $${result.error}`);
+                console.error("[Chat] Send failed:", result.error);
+                alert(`Error: ${result.error}`);
             }
         } catch (err: any) {
-            console.error("Failed to send message:", err);
+            console.error("[Chat] Failed to send message:", err);
             alert("Failed to send message. Is the 24h window open?");
         } finally {
             setSending(false);
@@ -206,7 +215,7 @@ export default function ChatsPage() {
                 <div className="p-6 border-b border-slate-50">
                     <h1 className="text-xl font-bold text-slate-900 mb-4 font-outfit">Messages</h1>
                     <div className="relative group">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-primary transition-colors" />
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-700 group-focus-within:text-primary transition-colors" />
                         <input
                             type="text"
                             placeholder="Search chats..."
@@ -219,7 +228,7 @@ export default function ChatsPage() {
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-2">
                     {filteredConversations.length === 0 ? (
-                        <div className="text-center py-10 text-slate-400">
+                        <div className="text-center py-10 text-slate-700">
                             <MessageSquare className="h-10 w-10 mx-auto mb-2 opacity-20" />
                             <p className="text-xs font-bold uppercase tracking-widest">No chats found</p>
                         </div>
@@ -237,18 +246,18 @@ export default function ChatsPage() {
                                                 : "hover:bg-slate-50 border border-transparent"
                                             }`}
                                     >
-                                        <div className="h-12 w-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 shrink-0 uppercase font-bold border-2 border-white shadow-sm">
+                                        <div className="h-12 w-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-800 shrink-0 uppercase font-bold border-2 border-white shadow-sm">
                                             {avatarLetter}
                                         </div>
                                         <div className="flex-1 text-left min-w-0">
                                             <div className="flex justify-between items-center mb-1">
                                                 <p className="font-bold text-slate-900 truncate">{displayName}</p>
-                                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                                <span className="text-[10px] font-bold text-slate-700 uppercase tracking-widest">
                                                     {convo.updatedAt?.toDate ? format(convo.updatedAt.toDate(), "h:mm a") : ""}
                                                 </span>
                                             </div>
                                             <div className="flex justify-between items-center">
-                                                <p className="text-xs text-slate-500 truncate font-medium">{convo.lastMessage ?? "No message"}</p>
+                                                <p className="text-xs text-slate-800 truncate font-medium">{convo.lastMessage ?? "No message"}</p>
                                                 {convo.unreadCount > 0 && (
                                                     <span className="h-5 w-5 bg-primary text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow-lg shadow-primary/30">
                                                         {convo.unreadCount}
@@ -298,9 +307,9 @@ export default function ChatsPage() {
                                 </div>
                             </div>
                             <div className="flex items-center gap-2">
-                                <button className="p-3 hover:bg-slate-50 rounded-2xl transition-colors text-slate-400"><Phone className="h-5 w-5" /></button>
-                                <button className="p-3 hover:bg-slate-50 rounded-2xl transition-colors text-slate-400"><Video className="h-5 w-5" /></button>
-                                <button className="p-3 hover:bg-slate-50 rounded-2xl transition-colors text-slate-400"><MoreVertical className="h-5 w-5" /></button>
+                                <button className="p-3 hover:bg-slate-50 rounded-2xl transition-colors text-slate-700"><Phone className="h-5 w-5" /></button>
+                                <button className="p-3 hover:bg-slate-50 rounded-2xl transition-colors text-slate-700"><Video className="h-5 w-5" /></button>
+                                <button className="p-3 hover:bg-slate-50 rounded-2xl transition-colors text-slate-700"><MoreVertical className="h-5 w-5" /></button>
                             </div>
                         </div>
 
@@ -313,7 +322,7 @@ export default function ChatsPage() {
                                     <div key={msg.id} className="space-y-4">
                                         {showTimestamp && (
                                             <div className="flex justify-center my-6">
-                                                <span className="px-4 py-1.5 bg-white shadow-sm border border-slate-100 rounded-full text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                                <span className="px-4 py-1.5 bg-white shadow-sm border border-slate-100 rounded-full text-[10px] font-bold text-slate-700 uppercase tracking-widest">
                                                     {msg.timestamp?.toDate ? format(msg.timestamp.toDate(), "EEEE, MMM d  h:mm a") : "Just now"}
                                                 </span>
                                             </div>
@@ -327,7 +336,7 @@ export default function ChatsPage() {
                                                     <p className="text-sm font-medium leading-relaxed whitespace-pre-wrap">{msg.text}</p>
                                                 </div>
                                                 <div className={`flex items-center gap-1.5 mt-2 $${isOutbound ? "justify-end" : "justify-start"}`}>
-                                                    <span className="text-[10px] font-bold text-slate-400 pr-1">
+                                                    <span className="text-[10px] font-bold text-slate-700 pr-1">
                                                         {msg.timestamp?.toDate ? format(msg.timestamp.toDate(), "h:mm a") : ""}
                                                     </span>
                                                     {isOutbound && (
@@ -346,7 +355,7 @@ export default function ChatsPage() {
 
                         <div className="p-6 bg-white border-t border-slate-50">
                             <form onSubmit={handleSendMessage} className="flex items-center gap-4">
-                                <button type="button" className="p-3 hover:bg-slate-50 rounded-2xl transition-colors text-slate-400"><Paperclip className="h-5 w-5" /></button>
+                                <button type="button" className="p-3 hover:bg-slate-50 rounded-2xl transition-colors text-slate-700"><Paperclip className="h-5 w-5" /></button>
                                 <div className="flex-1 relative">
                                     <input
                                         type="text"
@@ -354,7 +363,7 @@ export default function ChatsPage() {
                                         onChange={(e) => setNewMessage(e.target.value)}
                                         placeholder="Type your message..."
                                         disabled={sending}
-                                        className="w-full pl-6 pr-14 py-4 bg-slate-50 border-none rounded-[24px] focus:ring-4 focus:ring-primary/5 focus:bg-white focus:border-primary/10 transition-all font-medium text-slate-900 outline-none placeholder:text-slate-300"
+                                        className="w-full pl-6 pr-14 py-4 bg-slate-50 border-none rounded-[24px] focus:ring-4 focus:ring-primary/5 focus:bg-white focus:border-primary/10 transition-all font-medium text-slate-900 outline-none placeholder:text-slate-600"
                                     />
                                     <button type="button" className="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 text-slate-300 hover:text-primary transition-colors">
                                         <Smile className="h-5 w-5" />
@@ -377,7 +386,7 @@ export default function ChatsPage() {
                         </div>
                         <div className="max-w-xs space-y-2">
                             <h3 className="text-xl font-bold text-slate-900 font-outfit">Select a conversation</h3>
-                            <p className="text-slate-400 text-sm font-medium">Choose a contact from the list to start messaging in real-time.</p>
+                            <p className="text-slate-700 text-sm font-medium">Choose a contact from the list to start messaging in real-time.</p>
                         </div>
                     </div>
                 )}
@@ -385,3 +394,5 @@ export default function ChatsPage() {
         </div>
     );
 }
+
+
