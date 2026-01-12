@@ -1,4 +1,4 @@
-import { NextResponse, NextRequest } from "next/server";
+﻿import { NextResponse, NextRequest } from "next/server";
 import { getAdminDb } from "@/lib/firebaseAdmin";
 import { FieldValue } from "firebase-admin/firestore";
 
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
 
     if (mode === "subscribe" && token === WEBHOOK_VERIFY_TOKEN) {
         console.log("[WhatsApp Webhook] Webhook verified successfully!");
-        return NextResponse.json(challenge, { status: 200 });
+        return new NextResponse(challenge, { status: 200 });
     }
 
     console.warn("[WhatsApp Webhook] Webhook verification failed - invalid token");
@@ -175,8 +175,8 @@ export async function POST(req: NextRequest) {
                             .add({
                                 senderId: fromNumber,
                                 senderName,
-                                message: messageText,
-                                type: "received",
+                                text: messageText,
+                                type: "inbound",
                                 status: "delivered",
                                 timestamp: new Date(timestamp),
                                 metaMessageId: message.id,
@@ -217,4 +217,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: String(error) }, { status: 500 });
     }
 }
+
+
+
 
