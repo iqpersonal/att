@@ -6,14 +6,14 @@ console.log("[WhatsApp API] Route loaded");
 
 export async function POST(req: Request) {
     const requestId = Date.now();
-    console.log([\] WhatsApp request started);
+    console.log(`[${requestId}] WhatsApp request started`);
     
     try {
         let body = await req.json();
-        console.log([\] Body parsed:, { to: body.to, type: body.type });
+        console.log(`[${requestId}] Body parsed:`, { to: body.to, type: body.type });
 
         const { to, templateName, components, languageCode, text, type = "template", tenantId = "tellus-teams" } = body;
-        console.log([\] Tenant ID:, tenantId);
+        console.log(`[${requestId}] Tenant ID:`, tenantId);
 
         let accessToken: string;
         let phoneNumberId: string;
@@ -21,11 +21,11 @@ export async function POST(req: Request) {
         try {
             // Get and validate token - handles refresh and expiration
             accessToken = await getValidWhatsAppToken(tenantId);
-            console.log([\] Token retrieved and validated);
+            console.log(`[${requestId}] Token retrieved and validated`);
 
             // Get phone number ID and other config from Firestore
             const db = getAdminDb();
-            const metaConfigRef = db.doc(	enants/\/integrations/meta);
+            const metaConfigRef = db.doc(`tenants/${tenantId}/integrations/meta`);
             const metaConfigSnap = await metaConfigRef.get();
 
             if (!metaConfigSnap.exists) {
@@ -45,10 +45,10 @@ export async function POST(req: Request) {
                 );
             }
 
-            console.log([\] Configuration retrieved);
+            console.log(`[${requestId}] Configuration retrieved`);
 
         } catch (configError: any) {
-            console.error([\] Configuration error:, configError);
+            console.error(`[${requestId}] Configuration error:`, configError);
 
             // Handle specific token errors
             if (configError.message?.includes("expired")) {
@@ -76,7 +76,7 @@ export async function POST(req: Request) {
 
         // Build message payload
         const cleanTo = to.replace(/\D/g, "");
-        const url = https://graph.facebook.com/v21.0/\/messages;
+        const url = `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`;
 
         const payload: any = {
             messaging_product: "whatsapp",
@@ -94,23 +94,23 @@ export async function POST(req: Request) {
             payload.text = { body: text };
         }
 
-        console.log([\] Sending to Meta API);
+        console.log(`[${requestId}] Sending to Meta API`);
 
         // Send to Meta
         const response = await fetch(url, {
             method: "POST",
             headers: {
-                "Authorization": Bearer \,
+                "Authorization": `Bearer ${accessToken}`,
                 "Content-Type": "application/json"
             },
             body: JSON.stringify(payload)
         });
 
         const data = await response.json();
-        console.log([\] Meta response:, { status: response.status });
+        console.log(`[${requestId}] Meta response:`, { status: response.status });
 
         if (!response.ok) {
-            console.error([\] Meta error:, data.error);
+            console.error(`[${requestId}] Meta error:`, data.error);
             
             // Handle token expiration from Meta API
             if (response.status === 401 || data.error?.code === 190) {
@@ -129,11 +129,11 @@ export async function POST(req: Request) {
             );
         }
 
-        console.log([\] Message sent successfully);
+        console.log(`[${requestId}] Message sent successfully`);
         return NextResponse.json({ success: true, data });
 
     } catch (error) {
-        console.error([\] Error:, error);
+        console.error(`[${requestId}] Error:`, error);
         return NextResponse.json(
             { error: "Internal server error" },
             { status: 500 }

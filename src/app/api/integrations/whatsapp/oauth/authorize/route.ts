@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
   }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-  const redirectUri = ${appUrl}/api/integrations/whatsapp/oauth/callback;
+  const redirectUri = `${appUrl}/api/integrations/whatsapp/oauth/callback`;
   const authUrl = generateOAuthAuthorizeURL(tenantId, redirectUri);
 
   return NextResponse.redirect(authUrl);

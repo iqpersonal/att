@@ -1,6 +1,4 @@
-import fetch from 'node-fetch';
-
-// Meta token refresh interface
+﻿// Meta token refresh interface
 interface MetaTokenRefreshResult {
   accessToken: string;
   expiresAt: number; // Unix timestamp
@@ -99,7 +97,7 @@ export function formatTokenExpiry(expiresAt: number): {
 
   return {
     daysRemaining,
-    formatted: daysRemaining > 0 ? \\ days\ : 'Expired',
+    formatted: daysRemaining > 0 ? `${daysRemaining} days` : 'Expired',
     isExpired: secondsRemaining <= 0
   };
 }

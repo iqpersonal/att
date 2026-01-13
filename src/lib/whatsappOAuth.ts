@@ -6,7 +6,7 @@ export function generateOAuthAuthorizeURL(tenantId: string, redirectUri: string)
   const scope = 'whatsapp_business_messaging,whatsapp_business_management';
   const state = Buffer.from(JSON.stringify({ tenantId })).toString('base64');
   
-  return https://www.facebook.com//dialog/oauth?client_id=&redirect_uri=&scope=&state=;
+  return `https://www.facebook.com/v21.0/dialog/oauth?client_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scope)}&state=${state}`;
 }
 
 export function decodeState(state: string): { tenantId: string } {
@@ -18,7 +18,7 @@ export async function exchangeCodeForToken(code: string, redirectUri: string): P
   const appId = process.env.NEXT_PUBLIC_META_APP_ID;
   const appSecret = process.env.META_APP_SECRET;
   
-  const response = await fetch(https://graph.facebook.com//oauth/access_token, {
+  const response = await fetch(`https://graph.facebook.com/v21.0/oauth/access_token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -30,7 +30,7 @@ export async function exchangeCodeForToken(code: string, redirectUri: string): P
   });
 
   if (!response.ok) {
-    throw new Error(Failed to exchange code: );
+    throw new Error(`Failed to exchange code: ${await response.text()}`);
   }
 
   return response.json();

@@ -17,12 +17,12 @@ export async function GET(req: NextRequest) {
     const { tenantId } = decodeState(state);
     
     // Exchange code for token
-    const redirectUri = $/api/integrations/whatsapp/oauth/callback;
+    const redirectUri = `${appUrl}/api/integrations/whatsapp/oauth/callback`;
     const tokenData = await exchangeCodeForToken(code, redirectUri);
 
     // Save to Firestore
     const db = getAdminDb();
-    const metaConfigRef = db.doc(	enants/File updated successfully{tenantId}/integrations/meta);
+    const metaConfigRef = db.doc(`tenants/${tenantId}/integrations/meta`);
     
     const now = Math.floor(Date.now() / 1000);
     const expiresAt = now + (tokenData.expires_in || 5184000); // Default 60 days
@@ -40,13 +40,13 @@ export async function GET(req: NextRequest) {
 
     // Redirect to settings page with success
     return NextResponse.redirect(
-      $/dashboard/settings/integrations?status=success&type=whatsapp
+      new URL(`/dashboard/settings/integrations?status=success&type=whatsapp`, appUrl)
     );
   } catch (error) {
     console.error('[OAuth Callback] Error:', error);
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
     return NextResponse.redirect(
-      $/dashboard/settings/integrations?status=error&type=whatsapp
+      new URL(`/dashboard/settings/integrations?status=error&type=whatsapp`, appUrl)
     );
   }
 }
