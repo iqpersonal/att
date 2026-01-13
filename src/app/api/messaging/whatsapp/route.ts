@@ -1,51 +1,82 @@
 ﻿import { NextResponse } from "next/server";
+import { getAdminDb } from "@/lib/firebaseAdmin";
+import { getValidWhatsAppToken } from "@/lib/tokenService";
 
-// Direct environment access - no Firebase dependency
-const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
-const WHATSAPP_PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
-
-console.log("[WhatsApp] Route loaded. Env check:", {
-  hasToken: !!WHATSAPP_ACCESS_TOKEN,
-  hasPhoneId: !!WHATSAPP_PHONE_NUMBER_ID,
-  tokenLength: WHATSAPP_ACCESS_TOKEN?.length || 0
-});
+console.log("[WhatsApp API] Route loaded");
 
 export async function POST(req: Request) {
     const requestId = Date.now();
-    console.log(`[${requestId}] WhatsApp request started`);
+    console.log([\] WhatsApp request started);
     
     try {
-        let body;
+        let body = await req.json();
+        console.log([\] Body parsed:, { to: body.to, type: body.type });
+
+        const { to, templateName, components, languageCode, text, type = "template", tenantId = "tellus-teams" } = body;
+        console.log([\] Tenant ID:, tenantId);
+
+        let accessToken: string;
+        let phoneNumberId: string;
+
         try {
-            body = await req.json();
-            console.log(`[${requestId}] Body parsed:`, { to: body.to, type: body.type });
-        } catch (e) {
-            console.error(`[${requestId}] JSON parse error:`, e);
-            return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+            // Get and validate token - handles refresh and expiration
+            accessToken = await getValidWhatsAppToken(tenantId);
+            console.log([\] Token retrieved and validated);
+
+            // Get phone number ID and other config from Firestore
+            const db = getAdminDb();
+            const metaConfigRef = db.doc(	enants/\/integrations/meta);
+            const metaConfigSnap = await metaConfigRef.get();
+
+            if (!metaConfigSnap.exists) {
+                return NextResponse.json(
+                    { error: "WhatsApp not configured. Please connect your account in Settings." },
+                    { status: 400 }
+                );
+            }
+
+            const metaConfig = metaConfigSnap.data();
+            phoneNumberId = metaConfig?.phoneNumberId;
+
+            if (!phoneNumberId) {
+                return NextResponse.json(
+                    { error: "Phone number ID not configured" },
+                    { status: 400 }
+                );
+            }
+
+            console.log([\] Configuration retrieved);
+
+        } catch (configError: any) {
+            console.error([\] Configuration error:, configError);
+
+            // Handle specific token errors
+            if (configError.message?.includes("expired")) {
+                return NextResponse.json(
+                    { 
+                        error: "WhatsApp token expired. Please reconnect in Settings.",
+                        code: "TOKEN_EXPIRED"
+                    },
+                    { status: 401 }
+                );
+            }
+
+            if (configError.message?.includes("not configured")) {
+                return NextResponse.json(
+                    { 
+                        error: "WhatsApp not configured. Please connect your account in Settings.",
+                        code: "NOT_CONFIGURED"
+                    },
+                    { status: 400 }
+                );
+            }
+
+            throw configError;
         }
 
-        const { to, templateName, components, languageCode, text, type = "template" } = body;
-
-        let accessToken = WHATSAPP_ACCESS_TOKEN;
-        let phoneNumberId = WHATSAPP_PHONE_NUMBER_ID;
-
-        console.log(`[${requestId}] Credentials:`, {
-          hasToken: !!accessToken,
-          hasPhoneId: !!phoneNumberId
-        });
-
-        if (!accessToken || !phoneNumberId) {
-            console.error(`[${requestId}] Missing credentials!`);
-            return NextResponse.json(
-                { error: "WhatsApp credentials not configured" },
-                { status: 400 }
-            );
-        }
-
+        // Build message payload
         const cleanTo = to.replace(/\D/g, "");
-        const url = `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`;
-
-        console.log(`[${requestId}] Sending to Meta:`, { url, to: cleanTo });
+        const url = https://graph.facebook.com/v21.0/\/messages;
 
         const payload: any = {
             messaging_product: "whatsapp",
@@ -63,33 +94,46 @@ export async function POST(req: Request) {
             payload.text = { body: text };
         }
 
+        console.log([\] Sending to Meta API);
+
+        // Send to Meta
         const response = await fetch(url, {
             method: "POST",
             headers: {
-                "Authorization": `Bearer ${accessToken}`,
+                "Authorization": Bearer \,
                 "Content-Type": "application/json"
             },
             body: JSON.stringify(payload)
         });
 
         const data = await response.json();
-
-        console.log(`[${requestId}] Meta response:`, { 
-            status: response.status, 
-            messageId: data.messages?.[0]?.id,
-            error: data.error?.message 
-        });
+        console.log([\] Meta response:, { status: response.status });
 
         if (!response.ok) {
+            console.error([\] Meta error:, data.error);
+            
+            // Handle token expiration from Meta API
+            if (response.status === 401 || data.error?.code === 190) {
+                return NextResponse.json(
+                    { 
+                        error: "WhatsApp token expired. Please reconnect in Settings.",
+                        code: "TOKEN_EXPIRED"
+                    },
+                    { status: 401 }
+                );
+            }
+
             return NextResponse.json(
                 { error: data.error?.message || "Failed to send message" },
                 { status: response.status }
             );
         }
 
+        console.log([\] Message sent successfully);
         return NextResponse.json({ success: true, data });
+
     } catch (error) {
-        console.error(`[${requestId}] Error:`, error);
+        console.error([\] Error:, error);
         return NextResponse.json(
             { error: "Internal server error" },
             { status: 500 }
