@@ -1,12 +1,22 @@
 ﻿import { getAdminDb } from './firebaseAdmin';
 
 export interface WhatsAppConfig {
+  // User-scoped token (expires in 60 days)
   accessToken: string;
   expiresAt: number;
+  
+  // System User Token (never expires - use this for API calls)
+  systemUserToken?: string;
+  
+  // Status and metadata
   status: 'connected' | 'token_expired' | 'not_connected';
   connectedAt?: number;
+  updatedAt?: number;
+  
+  // Firestore config
   phoneNumberId?: string;
   wabaId?: string;
+  businessAccountId?: string;
 }
 
 export interface MicrosoftTokens {
@@ -16,8 +26,15 @@ export interface MicrosoftTokens {
   updatedAt?: string;
 }
 
+// ============================================
 // WhatsApp Token Functions
-export async function refreshWhatsAppToken(tenantId: string): Promise<string> {
+// ============================================
+
+/**
+ * Get the most reliable token for API calls
+ * Priority: System User Token > User Token (if not expired)
+ */
+export async function getValidWhatsAppToken(tenantId: string): Promise<string> {
   const db = getAdminDb();
   const metaConfigRef = db.doc(`tenants/${tenantId}/integrations/meta`);
   const metaConfigSnap = await metaConfigRef.get();
@@ -26,37 +43,116 @@ export async function refreshWhatsAppToken(tenantId: string): Promise<string> {
     throw new Error('WhatsApp not configured. Please connect your account.');
   }
 
-  const data = metaConfigSnap.data() as WhatsAppConfig;
-  
-  if (!data.accessToken) {
-    throw new Error('No access token found');
+  const config = metaConfigSnap.data() as WhatsAppConfig;
+
+  // Priority 1: Use System User Token (never expires)
+  if (config.systemUserToken) {
+    console.log('[TokenService] Using System User Token (never expires)');
+    return config.systemUserToken;
   }
 
-  const now = Math.floor(Date.now() / 1000);
+  // Priority 2: Use user token if valid
+  if (config.accessToken) {
+    const now = Math.floor(Date.now() / 1000);
+    const hoursUntilExpiry = (config.expiresAt - now) / 3600;
 
-  // Check if token is expired or expiring soon (within 1 hour)
-  if (data.expiresAt && data.expiresAt - now < 3600) {
-    console.warn('[TokenService] Token expired or expiring soon');
-    
-    // Mark as expired so UI can prompt reconnection
-    await metaConfigRef.update({
-      status: 'token_expired',
-      updatedAt: now,
-    });
-    
-    throw new Error('WhatsApp token expired. Please reconnect in Settings.');
+    // If token expires within 24 hours, mark for renewal
+    if (config.expiresAt && config.expiresAt - now < 86400) {
+      console.warn(`[TokenService] Token expiring in ${hoursUntilExpiry.toFixed(1)} hours`);
+      
+      // Update status to warn UI
+      if (hoursUntilExpiry <= 0) {
+        await metaConfigRef.update({
+          status: 'token_expired',
+          updatedAt: now,
+        });
+        throw new Error('WhatsApp token has expired. Please reconnect in Settings.');
+      }
+      
+      if (hoursUntilExpiry < 24) {
+        await metaConfigRef.update({
+          status: 'token_expiring',
+          updatedAt: now,
+        });
+      }
+    }
+
+    return config.accessToken;
   }
 
-  return data.accessToken;
+  throw new Error('No valid WhatsApp token found');
 }
 
-export async function getValidWhatsAppToken(tenantId: string): Promise<string> {
-  try {
-    return await refreshWhatsAppToken(tenantId);
-  } catch (error: any) {
-    console.error('[TokenService] Failed to get valid token:', error.message);
-    throw error;
+/**
+ * Validate token and check expiration
+ */
+export async function validateWhatsAppToken(tenantId: string): Promise<{
+  valid: boolean;
+  expiresIn: number;
+  hoursUntilExpiry: number;
+  needsRefresh: boolean;
+}> {
+  const db = getAdminDb();
+  const metaConfigRef = db.doc(`tenants/${tenantId}/integrations/meta`);
+  const metaConfigSnap = await metaConfigRef.get();
+
+  if (!metaConfigSnap.exists) {
+    return { valid: false, expiresIn: 0, hoursUntilExpiry: 0, needsRefresh: false };
   }
+
+  const config = metaConfigSnap.data() as WhatsAppConfig;
+  const now = Math.floor(Date.now() / 1000);
+
+  // System token is always valid
+  if (config.systemUserToken) {
+    return { valid: true, expiresIn: 0, hoursUntilExpiry: 999999, needsRefresh: false };
+  }
+
+  if (!config.accessToken) {
+    return { valid: false, expiresIn: 0, hoursUntilExpiry: 0, needsRefresh: false };
+  }
+
+  const expiresIn = config.expiresAt - now;
+  const hoursUntilExpiry = expiresIn / 3600;
+  const needsRefresh = hoursUntilExpiry < 24;
+  const valid = expiresIn > 0;
+
+  return { valid, expiresIn, hoursUntilExpiry, needsRefresh };
+}
+
+/**
+ * Update WhatsApp configuration with new tokens
+ */
+export async function updateWhatsAppTokens(
+  tenantId: string,
+  tokens: {
+    accessToken?: string;
+    expiresAt?: number;
+    systemUserToken?: string;
+  }
+): Promise<void> {
+  const db = getAdminDb();
+  const metaConfigRef = db.doc(`tenants/${tenantId}/integrations/meta`);
+  const now = Math.floor(Date.now() / 1000);
+
+  const updateData: any = {
+    updatedAt: now,
+    status: 'connected',
+  };
+
+  if (tokens.accessToken) {
+    updateData.accessToken = tokens.accessToken;
+  }
+
+  if (tokens.expiresAt) {
+    updateData.expiresAt = tokens.expiresAt;
+  }
+
+  if (tokens.systemUserToken) {
+    updateData.systemUserToken = tokens.systemUserToken;
+  }
+
+  await metaConfigRef.update(updateData);
 }
 
 export async function getWhatsAppConfig(tenantId: string): Promise<WhatsAppConfig> {
@@ -71,7 +167,10 @@ export async function getWhatsAppConfig(tenantId: string): Promise<WhatsAppConfi
   return metaConfigSnap.data() as WhatsAppConfig;
 }
 
+// ============================================
 // Microsoft Token Functions
+// ============================================
+
 export async function refreshMicrosoftToken(refreshToken: string): Promise<MicrosoftTokens> {
   const clientId = process.env.AZURE_AD_CLIENT_ID;
   const clientSecret = process.env.AZURE_AD_CLIENT_SECRET;

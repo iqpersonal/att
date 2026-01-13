@@ -1,72 +1,69 @@
-﻿import { NextRequest, NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebaseAdmin";
+﻿import { NextRequest, NextResponse } from 'next/server';
+import { validateWhatsAppToken, getWhatsAppConfig } from '@/lib/tokenService';
 
+/**
+ * GET: Check token status and expiration
+ * POST: Manual token refresh (for admin/settings)
+ */
 export async function GET(req: NextRequest) {
   try {
-    const tenantId = req.nextUrl.searchParams.get("tenantId") || "tellus-teams";
-    const db = getAdminDb();
-    const docPath = "tenants/" + tenantId + "/integrations/meta";
-    const metaConfig = await db.doc(docPath).get();
-    if (!metaConfig.exists) {
-      return NextResponse.json({ error: "Meta config not found" }, { status: 404 });
-    }
-    const data = metaConfig.data();
-    const now = Math.floor(Date.now() / 1000);
-    const daysRemaining = Math.floor(((data?.expiresAt || 0) - now) / 86400);
+    const tenantId = req.nextUrl.searchParams.get('tenantId') || 'tellus-teams';
+
+    const validation = await validateWhatsAppToken(tenantId);
+    const config = await getWhatsAppConfig(tenantId);
+
     return NextResponse.json({
-      isConfigured: !!data?.accessToken,
-      expiresAt: data?.expiresAt,
+      isConfigured: !!config.accessToken || !!config.systemUserToken,
+      expiresAt: config.expiresAt || 0,
       expiry: {
-        daysRemaining,
-        formatted: daysRemaining > 0 ? daysRemaining + " days" : "Expired",
-        isExpired: daysRemaining <= 0
-      }
+        daysRemaining: Math.floor(validation.hoursUntilExpiry / 24),
+        formatted: validation.hoursUntilExpiry > 0 
+          ? `${Math.floor(validation.hoursUntilExpiry / 24)}d ${Math.floor(validation.hoursUntilExpiry % 24)}h`
+          : 'Expired',
+        isExpired: !validation.valid,
+      },
+      validation,
+      hasSystemToken: !!config.systemUserToken,
+      lastRefreshed: config.updatedAt || 0,
+      tokenVersion: config.systemUserToken ? 2 : 1,
+      hasHistory: true,
     });
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: errorMsg }, { status: 500 });
+  } catch (error: any) {
+    console.error('[Meta Token Status] Error:', error);
+    return NextResponse.json(
+      { error: error.message || 'Failed to fetch token status' },
+      { status: 500 }
+    );
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const tenantId = body.tenantId || "tellus-teams";
-    const db = getAdminDb();
-    const docPath = "tenants/" + tenantId + "/integrations/meta";
-    const metaConfig = await db.doc(docPath).get();
-    if (!metaConfig.exists) {
-      return NextResponse.json({ error: "Meta config not found" }, { status: 404 });
+    const { tenantId = 'tellus-teams' } = await req.json();
+
+    const validation = await validateWhatsAppToken(tenantId);
+
+    if (!validation.needsRefresh) {
+      return NextResponse.json({
+        success: true,
+        message: 'Token is still valid',
+        validation,
+      });
     }
-    const configData = metaConfig.data();
-    const currentToken = configData?.accessToken;
-    const appId = process.env.META_APP_ID;
-    const appSecret = process.env.META_APP_SECRET;
-    if (!appId || !appSecret || !currentToken) {
-      return NextResponse.json({ error: "Missing credentials" }, { status: 500 });
-    }
-    const refreshUrl = "https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id=" + appId + "&client_secret=" + appSecret + "&fb_exchange_token=" + currentToken;
-    const response = await fetch(refreshUrl, { method: "GET" });
-    const result = await response.json();
-    if (result.error) {
-      return NextResponse.json({ error: result.error.message }, { status: 400 });
-    }
-    const now = Math.floor(Date.now() / 1000);
-    const expiresIn = result.expires_in || 5184000;
-    const expiresAt = now + expiresIn;
-    await db.doc(docPath).update({
-      accessToken: result.access_token,
-      expiresAt,
-      refreshedAt: now,
-      tokenVersion: ((configData?.tokenVersion) || 0) + 1
-    });
+
+    // Token needs refresh - UI should prompt user to reconnect
+    // (WhatsApp tokens cannot be refreshed via API, only extended)
     return NextResponse.json({
-      success: true,
-      expiresAt,
-      daysRemaining: Math.floor(expiresIn / 86400)
-    });
-  } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: errorMsg }, { status: 500 });
+      success: false,
+      message: 'Token refresh required. Please reconnect your WhatsApp account.',
+      validation,
+      action: 'RECONNECT_REQUIRED',
+    }, { status: 401 });
+  } catch (error: any) {
+    console.error('[Meta Token Refresh] Error:', error);
+    return NextResponse.json(
+      { error: error.message || 'Failed to refresh token' },
+      { status: 500 }
+    );
   }
 }

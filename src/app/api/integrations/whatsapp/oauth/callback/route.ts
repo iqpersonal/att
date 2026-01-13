@@ -27,14 +27,36 @@ export async function GET(req: NextRequest) {
     const now = Math.floor(Date.now() / 1000);
     const expiresAt = now + (tokenData.expires_in || 5184000); // Default 60 days
 
-    await metaConfigRef.set({
+    // Build update object with both tokens
+    const updateData: any = {
       accessToken: tokenData.access_token,
       expiresAt,
       connectedAt: now,
       updatedAt: now,
       status: 'connected',
       source: 'oauth',
-    }, { merge: true });
+    };
+
+    // If system user token is available (from tokenData), store it
+    if (tokenData.system_user_token) {
+      updateData.systemUserToken = tokenData.system_user_token;
+      console.log('[OAuth Callback] System User Token received and stored');
+    }
+
+    // Extract and store additional config
+    if (tokenData.phone_number_id) {
+      updateData.phoneNumberId = tokenData.phone_number_id;
+    }
+
+    if (tokenData.waba_id) {
+      updateData.wabaId = tokenData.waba_id;
+    }
+
+    if (tokenData.business_account_id) {
+      updateData.businessAccountId = tokenData.business_account_id;
+    }
+
+    await metaConfigRef.set(updateData, { merge: true });
 
     console.log('[OAuth Callback] Token saved for tenant:', tenantId);
 
