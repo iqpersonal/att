@@ -1,36 +1,43 @@
 ﻿export const dynamic = 'force-dynamic';
 
 import { NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebaseAdmin";
+import { getBestWhatsAppToken } from "@/lib/envTokenManager";
 
 export async function GET(req: Request) {
     try {
         const { searchParams } = new URL(req.url);
         const tenantId = searchParams.get("tenantId") || "tellus-teams";
 
-        const adminDb = getAdminDb();
+        // Get token and WABA ID from environment (most reliable source)
+        let accessToken: string;
+        let wabaId: string;
+        let tokenSource: string;
 
-        // 1. Fetch Legacy WhatsApp config first (Dedicated WhatsApp Token)
-        const configSnap = await adminDb.doc(`tenants/${tenantId}/config/whatsapp`).get();
-        const configData = configSnap.data() || {};
+        try {
+            const { token, source } = getBestWhatsAppToken();
+            accessToken = token;
+            tokenSource = source;
+            
+            wabaId = process.env.WHATSAPP_WABA_ID || "";
 
-        // 2. Fetch centralized Meta integration for fallback
-        const metaSnap = await adminDb.doc(`tenants/${tenantId}/integrations/meta`).get();
-        const metaData = metaSnap.data() || {};
+            if (!wabaId) {
+                throw new Error("WHATSAPP_WABA_ID not found in environment");
+            }
 
-        const accessToken = configData.accessToken || metaData.accessToken;
-        const wabaId = configData.wabaId;
+            console.log(`[Templates] Using token source: ${tokenSource}`);
+            console.log(`[Templates] WABA ID: ${wabaId}`);
 
-        if (!accessToken || !wabaId) {
-            console.error(`[Templates] Missing credentials for tenant: ${tenantId}. Token: ${!!accessToken}, WABA: ${!!wabaId}`);
+        } catch (error: any) {
+            console.error(`[Templates] Configuration error:`, error.message);
             return NextResponse.json({
                 success: false,
-                error: !accessToken ? "Meta Access Token missing in Integrations" : "WABA ID missing in Settings"
-            }, { status: 400 });
+                error: `WhatsApp configuration error: ${error.message}`,
+                code: "CONFIG_ERROR"
+            }, { status: 500 });
         }
 
         const url = `https://graph.facebook.com/v21.0/${wabaId}/message_templates?limit=100`;
-        console.log(`[Templates] WABA: ${wabaId}, URL: ${url}`);
+        console.log(`[Templates] Fetching from: ${url}`);
 
         try {
             const response = await fetch(url, {
@@ -44,43 +51,56 @@ export async function GET(req: Request) {
             let responseData;
             try {
                 responseData = JSON.parse(responseText);
-            } catch (pE) {
+            } catch (parseError) {
                 console.error("[Templates] Meta Non-JSON Response:", responseText);
-                return NextResponse.json({ success: false, error: "Invalid response from Meta API" }, { status: 500 });
+                return NextResponse.json({ 
+                    success: false, 
+                    error: "Invalid response from Meta API",
+                    details: responseText
+                }, { status: 500 });
             }
 
             if (!response.ok) {
-                console.error("[Templates] Meta Error:", responseData);
+                console.error("[Templates] Meta API error:", responseData);
+                
+                if (response.status === 401) {
+                    return NextResponse.json({
+                        success: false,
+                        error: "Invalid WhatsApp token. Please verify META_SYSTEM_USER_TOKEN.",
+                        code: "TOKEN_INVALID"
+                    }, { status: 401 });
+                }
+
                 return NextResponse.json({
                     success: false,
-                    error: `Meta Error: ${responseData.error?.message || "Unknown error"}`
+                    error: responseData.error?.message || "Failed to fetch templates",
+                    code: responseData.error?.code
                 }, { status: response.status });
             }
 
-            if (!responseData.data || !Array.isArray(responseData.data)) {
-                console.error("[Templates] Unexpected data format:", responseData);
-                return NextResponse.json({ success: false, error: "Invalid data format from Meta" }, { status: 500 });
-            }
+            console.log(`[Templates] Successfully fetched templates`);
 
-            // Filter for APPROVED templates only
-            const templates = responseData.data
-                .filter((t: any) => t.status === "APPROVED")
-                .map((t: any) => ({
-                    name: t.name,
-                    language: t.language,
-                    category: t.category,
-                    components: t.components
-                }));
+            return NextResponse.json({
+                success: true,
+                data: responseData.data || [],
+                tokenSource
+            });
 
-            console.log(`[Templates] Success! Found ${templates.length} templates`);
-            return NextResponse.json({ success: true, templates });
-        } catch (fetchError: any) {
-            console.error("[Templates] Fetch Exception:", fetchError);
-            return NextResponse.json({ success: false, error: "Failed to connect to Meta API" }, { status: 500 });
+        } catch (fetchError) {
+            console.error("[Templates] Fetch error:", fetchError);
+            return NextResponse.json({
+                success: false,
+                error: "Failed to fetch templates from Meta API",
+                details: fetchError instanceof Error ? fetchError.message : String(fetchError)
+            }, { status: 500 });
         }
-    } catch (error: any) {
-        console.error("[Templates] Outer Exception:", error);
-        return NextResponse.json({ success: false, error: error.message || "Internal server error" }, { status: 500 });
+
+    } catch (error) {
+        console.error("[Templates] Unexpected error:", error);
+        return NextResponse.json({
+            success: false,
+            error: "Internal server error",
+            details: error instanceof Error ? error.message : String(error)
+        }, { status: 500 });
     }
 }
-
