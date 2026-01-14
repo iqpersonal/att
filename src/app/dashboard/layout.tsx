@@ -3,13 +3,22 @@
 import React from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { SidebarProvider, useSidebar } from "@/context/SidebarContext";
+import { usePathname } from "next/navigation";
+import { RoleGuard } from "@/components/RoleGuard";
+import { MENU_PERMISSIONS } from "@/lib/rbac";
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
     const { isCollapsed } = useSidebar();
+    const pathname = usePathname();
+
+    // Get permission for current path
+    const requiredPermission = MENU_PERMISSIONS[pathname];
 
     return (
         <div className={`flex-1 transition-all duration-300 ${isCollapsed ? "ml-20" : "ml-72"}`}>
-            {children}
+            <RoleGuard permission={requiredPermission}>
+                {children}
+            </RoleGuard>
         </div>
     );
 }

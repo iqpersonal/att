@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useSidebar } from "@/context/SidebarContext";
+import { canAccess, MENU_PERMISSIONS } from "@/lib/rbac";
 
 interface MenuItem {
     title: string;
@@ -58,7 +59,15 @@ export function Sidebar() {
     const { role, features } = useAuth();
     const { isCollapsed, toggle } = useSidebar();
 
-    const currentItems = role === "super-admin" ? superAdminItems : menuItems;
+    // Filter items based on permissions
+    const filteredMenuItems = menuItems.filter(item => {
+        if (role === "super-admin") return true; 
+        const permission = MENU_PERMISSIONS[item.href];
+        if (!permission) return true; // Default to visible if no permission defined (like Dashboard)
+        return canAccess(role, permission);
+    });
+
+    const currentItems = role === "super-admin" ? superAdminItems : filteredMenuItems;
 
     const handleLogout = async () => {
         await signOut(auth);
@@ -69,7 +78,6 @@ export function Sidebar() {
         <aside
             className={`${isCollapsed ? "w-20" : "w-72"} bg-white border-r border-slate-100 flex flex-col fixed inset-y-0 z-50 shadow-[4px_0_24px_rgba(0,0,0,0.02)] transition-all duration-300 group/sidebar`}
         >
-            {/* Toggle Button - Visible on Sidebar Hover */}
             <button
                 onClick={toggle}
                 className="absolute -right-3 top-10 h-7 w-7 bg-white border border-slate-100 rounded-full flex items-center justify-center shadow-md text-slate-400 hover:text-primary transition-all opacity-0 group-hover/sidebar:opacity-100 z-[60]"
@@ -77,7 +85,6 @@ export function Sidebar() {
                 {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
             </button>
 
-            {/* Logo Section */}
             <div className={`flex items-center gap-3 mb-10 mt-8 px-6 ${isCollapsed ? "justify-center px-0" : ""}`}>
                 <div className="bg-primary/10 p-2.5 rounded-2xl shrink-0">
                     <GraduationCap className="h-6 w-6 text-primary" />
@@ -89,11 +96,10 @@ export function Sidebar() {
                 )}
             </div>
 
-            {/* Navigation */}
             <nav className="flex-1 space-y-2 px-3">
                 {!isCollapsed && (
                     <p className="px-4 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 mb-6 truncate animate-in fade-in duration-500">
-                        Internal Systems
+                        {role === "super-admin" ? "System Control" : "School Management"}
                     </p>
                 )}
 
@@ -135,7 +141,6 @@ export function Sidebar() {
                 </div>
             </nav>
 
-            {/* Logout Section */}
             <div className={`mt-auto pb-8 pt-6 border-t border-slate-50 ${isCollapsed ? "px-0" : "px-4"}`}>
                 <button
                     onClick={handleLogout}
