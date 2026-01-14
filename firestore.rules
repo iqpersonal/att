@@ -10,7 +10,8 @@ service cloud.firestore {
     }
     
     function isTenantMember(tenantId) {
-      return exists(/databases/(default)/documents/tenants/$(tenantId)/members/$(request.auth.uid)) ||
+      return (request.auth.token.tenantId == tenantId) ||
+             exists(/databases/(default)/documents/tenants/$(tenantId)/members/$(request.auth.uid)) ||
              get(/databases/(default)/documents/tenants/$(tenantId)).data.ownerId == request.auth.uid;
     }
 
@@ -79,6 +80,11 @@ service cloud.firestore {
         }
       }
 
+      match /message_history/{docId} {
+        allow read: if isTenantMember(tenantId);
+        allow create: if isSignedIn() && isTenantMember(tenantId);
+      }
+
       match /config/{docId} {
         allow read: if isTenantMember(tenantId);
         allow write: if isTenantMember(tenantId);
@@ -96,4 +102,3 @@ service cloud.firestore {
     }
   }
 }
-
