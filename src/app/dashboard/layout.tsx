@@ -6,6 +6,7 @@ import { SidebarProvider, useSidebar } from "@/context/SidebarContext";
 import { usePathname } from "next/navigation";
 import { RoleGuard } from "@/components/RoleGuard";
 import { MENU_PERMISSIONS } from "@/lib/rbac";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
     const { isCollapsed } = useSidebar();
@@ -16,9 +17,11 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
 
     return (
         <div className={`flex-1 transition-all duration-300 ${isCollapsed ? "ml-20" : "ml-72"}`}>
-            <RoleGuard permission={requiredPermission}>
-                {children}
-            </RoleGuard>
+            <ErrorBoundary>
+                <RoleGuard permission={requiredPermission}>
+                    {children}
+                </RoleGuard>
+            </ErrorBoundary>
         </div>
     );
 }

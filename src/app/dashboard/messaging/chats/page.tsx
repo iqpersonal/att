@@ -78,7 +78,7 @@ export default function ChatsPage() {
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const fetchConversations = async (reset = true) => {
-        if (!tenantId) return;
+        if (!tenantId || tenantId === 'undefined') return;
         if (!reset) setLoadingMore(true);
         try {
             const constraints: QueryConstraint[] = [
@@ -116,12 +116,12 @@ export default function ChatsPage() {
     };
 
     useEffect(() => {
-        if (!tenantId) return;
+        if (!tenantId || tenantId === 'undefined') return;
         fetchConversations(true);
     }, [tenantId]);
 
     useEffect(() => {
-        if (!tenantId || !selectedConvo) return;
+        if (!tenantId || !selectedConvo || tenantId === 'undefined') return;
 
         const q = query(
             collection(db, "tenants", tenantId, "conversations", selectedConvo.id, "messages"),
@@ -132,7 +132,7 @@ export default function ChatsPage() {
         const unsubscribe = onSnapshot(
             q,
             (snapshot) => {
-                const data = snapshot.docs.map(doc => {
+                const data = (snapshot.docs || []).map(doc => {
                     const docData = doc.data();
                     return {
                         id: doc.id,
@@ -203,7 +203,7 @@ export default function ChatsPage() {
         }
     };
 
-    const filteredConversations = conversations.filter(c => {
+    const filteredConversations = (conversations || []).filter(c => {
         const displayName = c.participantName ?? c.participantPhone ?? "Unknown";
         return displayName.toLowerCase().includes(searchQuery.toLowerCase()) || (c.participantPhone ?? "").includes(searchQuery);
     });
@@ -318,9 +318,10 @@ export default function ChatsPage() {
                         </div>
 
                         <div data-messages-container className="flex-1 overflow-y-auto p-8 space-y-4 bg-gradient-to-b from-slate-50/50 to-white">
-                            {messages.map((msg, idx) => {
+                            {(messages || []).map((msg, idx) => {
                                 const isOutbound = msg.type === "outbound";
-                                const showTimestamp = idx === 0 || (messages[idx - 1] && msg.timestamp?.seconds - messages[idx - 1].timestamp?.seconds > 300);
+                                const prevMsg = idx > 0 ? messages[idx - 1] : null;
+                                const showTimestamp = idx === 0 || (prevMsg && msg.timestamp?.seconds - prevMsg.timestamp?.seconds > 300);
 
                                 return (
                                     <div key={msg.id} className="space-y-3">

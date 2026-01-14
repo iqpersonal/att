@@ -119,7 +119,7 @@ export default function MessagingDashboard() {
     const placeholdersByComponent = useMemo(() => {
         if (!selectedTemplate || !selectedTemplate.components) return {};
         const map: Record<string, string[]> = {};
-        selectedTemplate.components.forEach(comp => {
+        (selectedTemplate?.components || []).forEach(comp => {
             if (comp.text) {
                 const matches = comp.text.match(/{{(\d+)}}/g);
                 if (matches) {
@@ -140,7 +140,7 @@ export default function MessagingDashboard() {
 
     const previewText = useMemo(() => {
         if (!selectedTemplate) return "";
-        const body = selectedTemplate.components.find(c => c.type === "BODY");
+        const body = (selectedTemplate?.components || []).find(c => c.type === "BODY");
         if (!body || !body.text) return "";
         let text = body.text;
         Object.entries(templateVariables).forEach(([key, val]) => {
@@ -277,7 +277,7 @@ export default function MessagingDashboard() {
     };
 
     const toggleSelectAll = (items: (Student | Lead)[]) => {
-        const validItems = items.filter(i => (i as any).phoneNumber || (i as any).phone);
+        const validItems = (items || []).filter(i => (i as any).phoneNumber || (i as any).phone);
         if (selectedIds.size === validItems.length && validItems.length > 0) {
             setSelectedIds(new Set());
         } else {
@@ -286,17 +286,17 @@ export default function MessagingDashboard() {
         }
     };
 
-    const campaigns = useMemo(() => Array.from(new Set(leads.map(l => l.campaignName).filter(Boolean))), [leads]);
-    const forms = useMemo(() => Array.from(new Set(leads.map(l => l.formName).filter(Boolean))), [leads]);
+    const campaigns = useMemo(() => Array.from(new Set((leads || []).map(l => l.campaignName).filter(Boolean))), [leads]);
+    const forms = useMemo(() => Array.from(new Set((leads || []).map(l => l.formName).filter(Boolean))), [leads]);
 
     const filteredData = useMemo(() => {
         if (source === "students") {
-            return students.filter(s =>
+            return (students || []).filter(s =>
                 (s.name?.toLowerCase() || "").includes(searchQuery.toLowerCase()) ||
                 (s.rollNumber || "").includes(searchQuery)
             );
         } else {
-            return leads.filter(l => {
+            return (leads || []).filter(l => {
                 const matchesSearch = (l.fullName?.toLowerCase() || "").includes(searchQuery.toLowerCase()) ||
                     (l.phone || "").includes(searchQuery);
                 const matchesCampaign = campaignFilter === "all" || l.campaignName === campaignFilter;
@@ -327,15 +327,15 @@ export default function MessagingDashboard() {
     const lastSelectedItem = useMemo(() => {
         if (selectedIds.size === 1) {
             const id = Array.from(selectedIds)[0];
-            return source === "students" ? students.find(s => s.id === id) : leads.find(l => l.id === id);
+            return source === "students" ? (students || []).find(s => s.id === id) : (leads || []).find(l => l.id === id);
         }
         return null;
     }, [selectedIds, source, students, leads]);
 
     const handleSendMessage = async () => {
         const recipients = source === "students"
-            ? students.filter(s => selectedIds.has(s.id))
-            : leads.filter(l => selectedIds.has(l.id));
+            ? (students || []).filter(s => selectedIds.has(s.id))
+            : (leads || []).filter(l => selectedIds.has(l.id));
         if (selectedIds.size === 0 && selectedStudent) {
             recipients.push(selectedStudent as any);
         } else if (selectedIds.size === 0 && searchQuery.startsWith("+")) {
@@ -454,14 +454,14 @@ export default function MessagingDashboard() {
                                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Campaign</label>
                                     <select value={campaignFilter} onChange={(e) => setCampaignFilter(e.target.value)} className="w-full px-4 py-3 bg-white border border-slate-100 rounded-xl text-xs font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/10">
                                         <option value="all">All Campaigns</option>
-                                        {campaigns.map(c => <option key={c} value={c}>{c}</option>)}
+                                        {(campaigns || []).map(c => <option key={c} value={c}>{c}</option>)}
                                     </select>
                                 </div>
                                 <div className="space-y-2">
                                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Form</label>
                                     <select value={formFilter} onChange={(e) => setFormFilter(e.target.value)} className="w-full px-4 py-3 bg-white border border-slate-100 rounded-xl text-xs font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/10">
                                         <option value="all">All Forms</option>
-                                        {forms.map(f => <option key={f} value={f}>{f}</option>)}
+                                        {(forms || []).map(f => <option key={f} value={f}>{f}</option>)}
                                     </select>
                                 </div>
                                 <div className="space-y-2">
@@ -479,7 +479,7 @@ export default function MessagingDashboard() {
                             <div className="flex items-center justify-between px-1">
                                 <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Select {source === "students" ? "Students" : "Leads"}</label>
                                 <button onClick={() => toggleSelectAll(filteredData)} className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">
-                                    {selectedIds.size === filteredData.filter(i => (i as any).phoneNumber || (i as any).phone).length && filteredData.length > 0 ? "Deselect All" : "Select Visible"}
+                                    {selectedIds.size === (filteredData || []).filter(i => (i as any).phoneNumber || (i as any).phone).length && filteredData.length > 0 ? "Deselect All" : "Select Visible"}
                                 </button>
                             </div>
 
@@ -544,7 +544,7 @@ export default function MessagingDashboard() {
                                 {templates.length === 0 ? (
                                     <option value="">No templates found</option>
                                 ) : (
-                                    templates.map(t => (
+                                    (templates || []).map(t => (
                                         <option key={t.name} value={t.name}>{t.name.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}</option>
                                     ))
                                 )}
@@ -558,7 +558,7 @@ export default function MessagingDashboard() {
                                     <label className="text-xs font-extrabold text-[#0D121F] uppercase tracking-widest">Required Variables</label>
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    {allPlaceholderIds.map((p) => (
+                                    {(allPlaceholderIds || []).map((p) => (
                                         <div key={p} className="space-y-3">
                                             <div className="flex justify-between items-center ml-1">
                                                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Variable {p}</label>
@@ -618,7 +618,7 @@ export default function MessagingDashboard() {
                                     <p className="text-sm font-bold text-slate-400">No messages sent yet.</p>
                                 </div>
                             ) : (
-                                history.map(item => (
+                                (history || []).map(item => (
                                     <div key={item.id} className="p-5 bg-slate-50 rounded-3xl space-y-3 border border-slate-50 hover:border-slate-100 transition-colors group/history">
                                         <div className="flex items-start justify-between">
                                             <div>
