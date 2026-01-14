@@ -1,4 +1,4 @@
-﻿export const dynamic = 'force-dynamic';
+export const dynamic = 'force-dynamic';
 
 import { NextResponse } from "next/server";
 import { getBestWhatsAppToken } from "@/lib/envTokenManager";
@@ -82,7 +82,7 @@ export async function GET(req: Request) {
 
             return NextResponse.json({
                 success: true,
-                data: responseData.data || [],
+                templates: responseData.data || [],
                 tokenSource
             });
 
@@ -104,3 +104,4 @@ export async function GET(req: Request) {
         }, { status: 500 });
     }
 }
+
