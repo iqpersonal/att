@@ -48,6 +48,7 @@ interface Message {
     status?: 'sent' | 'delivered' | 'read';
     timestamp: any;
     metaId?: string;
+    message?: string;
 }
 
 interface Conversation {
@@ -122,8 +123,6 @@ export default function ChatsPage() {
     useEffect(() => {
         if (!tenantId || !selectedConvo) return;
 
-        console.log("[Chat] Setting up listener for:", { convoId: selectedConvo.id, tenantId });
-
         const q = query(
             collection(db, "tenants", tenantId, "conversations", selectedConvo.id, "messages"),
             orderBy("timestamp", "asc"),
@@ -194,10 +193,11 @@ export default function ChatsPage() {
                     updatedAt: serverTimestamp()
                 });
             } else {
-                alert(Error: );
+                alert(`Error: ${result.error}`);
             }
         } catch (err: any) {
-            alert("Failed to send message. Is the 24h window open?");
+            console.error(err);
+            alert("Failed to send message.");
         } finally {
             setSending(false);
         }
@@ -248,7 +248,10 @@ export default function ChatsPage() {
                                     <button
                                         key={convo.id}
                                         onClick={() => setSelectedConvo(convo)}
-                                        className={w-full flex items-center gap-4 p-4 rounded-2xl transition-all }
+                                        className={`w-full flex items-center gap-4 p-4 rounded-2xl transition-all ${selectedConvo?.id === convo.id
+                                                ? "bg-primary/5 border border-primary/20 shadow-sm"
+                                                : "hover:bg-slate-50 border border-transparent"
+                                            }`}
                                     >
                                         <div className="h-12 w-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-800 shrink-0 uppercase font-bold border-2 border-white shadow-sm">
                                             {avatarLetter}
@@ -314,15 +317,19 @@ export default function ChatsPage() {
                                                 </span>
                                             </div>
                                         )}
-                                        <div className={lex }>
-                                            <div className={max-w-[75%] group relative animate-in  duration-300}>
-                                                <div className={px-4 py-3 rounded-2xl shadow-md transition-all hover:shadow-lg }>
-                                                    <p className="text-[15px] font-normal leading-relaxed whitespace-pre-wrap break-words">
+                                        <div className={`flex ${isOutbound ? "justify-end" : "justify-start"}`}>
+                                            <div className={`max-w-[75%] group relative animate-in ${isOutbound ? "slide-in-from-right-4" : "slide-in-from-left-4"} duration-300`}>
+                                                <div className={`px-4 py-3 rounded-2xl shadow-md transition-all hover:shadow-lg ${
+                                                    isOutbound
+                                                        ? "bg-gradient-to-br from-emerald-500 to-emerald-600 text-white rounded-br-md"
+                                                        : "bg-white text-slate-800 rounded-bl-md border border-slate-100 shadow-sm"
+                                                }`}>
+                                                    <p className={`text-[15px] font-medium leading-relaxed whitespace-pre-wrap break-words ${isOutbound ? "text-white" : "text-slate-900"}`}>
                                                         {msg.text || msg.message || "(No message content)"}
                                                     </p>
                                                 </div>
-                                                <div className={lex items-center gap-1.5 mt-1.5 px-1 }>
-                                                    <span className="text-[11px] font-medium text-slate-500">
+                                                <div className={`flex items-center gap-1.5 mt-1.5 px-1 ${isOutbound ? "justify-end" : "justify-start"}`}>
+                                                    <span className="text-[11px] font-semibold text-slate-500">
                                                         {msg.timestamp?.toDate ? format(msg.timestamp.toDate(), "h:mm a") : "Sending..."}
                                                     </span>
                                                     {isOutbound && (
