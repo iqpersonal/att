@@ -258,7 +258,14 @@ export default function ChatsPage() {
                                         </div>
                                         <div className="flex-1 text-left min-w-0">
                                             <div className="flex justify-between items-center mb-1">
-                                                <p className="font-bold text-slate-900 truncate">{displayName}</p>
+                                                <p className="font-bold text-slate-900 truncate">
+                                                    {displayName}
+                                                    {convo.participantName && convo.participantPhone && (
+                                                        <span className="ml-1 text-[10px] font-normal text-slate-500">
+                                                            ({convo.participantPhone})
+                                                        </span>
+                                                    )}
+                                                </p>
                                                 <span className="text-[10px] font-bold text-slate-700 uppercase tracking-widest">
                                                     {convo.updatedAt?.toDate ? format(convo.updatedAt.toDate(), "h:mm a") : ""}
                                                 </span>
@@ -289,7 +296,14 @@ export default function ChatsPage() {
                                     {(selectedConvo.participantName || selectedConvo.participantPhone || "?").charAt(0)}
                                 </div>
                                 <div>
-                                    <h2 className="font-bold text-slate-900 font-outfit">{selectedConvo.participantName ?? selectedConvo.participantPhone ?? "Unknown"}</h2>
+                                    <h2 className="font-bold text-slate-900 font-outfit">
+                                        {selectedConvo.participantName ?? selectedConvo.participantPhone ?? "Unknown"}
+                                        {selectedConvo.participantName && selectedConvo.participantPhone && (
+                                            <span className="ml-2 text-sm font-normal text-slate-500">
+                                                ({selectedConvo.participantPhone})
+                                            </span>
+                                        )}
+                                    </h2>
                                     <p className="text-xs text-emerald-500 font-bold uppercase tracking-widest flex items-center gap-1.5">
                                         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                                         Active
