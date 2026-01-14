@@ -114,10 +114,10 @@ export default function MessagingDashboard() {
     const [history, setHistory] = useState<MessageHistory[]>([]);
     const [sending, setSending] = useState(false);
 
-    const selectedTemplate = useMemo(() => templates.find(t => t.name === selectedTemplateName), [templates, selectedTemplateName]);
+    const selectedTemplate = useMemo(() => (templates || []).find(t => t.name === selectedTemplateName), [templates, selectedTemplateName]);
 
     const placeholdersByComponent = useMemo(() => {
-        if (!selectedTemplate) return {};
+        if (!selectedTemplate || !selectedTemplate.components) return {};
         const map: Record<string, string[]> = {};
         selectedTemplate.components.forEach(comp => {
             if (comp.text) {
@@ -150,14 +150,14 @@ export default function MessagingDashboard() {
     }, [selectedTemplate, templateVariables]);
 
     const fetchTemplates = async () => {
-        if (!tenantId) return;
+        if (!tenantId || tenantId === undefined) return;
         setFetchingTemplates(true);
         try {
             const res = await fetch(`/api/messaging/whatsapp/templates?tenantId=${tenantId}`);
             const data = await res.json();
             if (data.success) {
                 setTemplates(data.templates);
-                if (data.templates.length > 0 && !selectedTemplateName) {
+                if (data.templates && data.templates.length > 0 && !selectedTemplateName) {
                     setSelectedTemplateName(data.templates[0].name);
                 }
             } else {
@@ -171,7 +171,7 @@ export default function MessagingDashboard() {
     };
 
     const fetchStudents = async (reset = true) => {
-        if (!tenantId) return;
+        if (!tenantId || tenantId === undefined) return;
         if (!reset) setLoadingMore(true);
         try {
             const constraints: QueryConstraint[] = [
@@ -208,7 +208,7 @@ export default function MessagingDashboard() {
     };
 
     const fetchLeads = async (reset = true) => {
-        if (!tenantId) return;
+        if (!tenantId || tenantId === undefined) return;
         if (!reset) setLoadingMore(true);
         try {
             const constraints: QueryConstraint[] = [
@@ -245,7 +245,7 @@ export default function MessagingDashboard() {
     };
 
     useEffect(() => {
-        if (!tenantId) return;
+        if (!tenantId || tenantId === undefined) return;
         fetchStudents(true);
         fetchLeads(true);
         fetchTemplates();
