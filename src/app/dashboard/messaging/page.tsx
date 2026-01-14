@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/context/AuthContext";
@@ -114,13 +114,13 @@ export default function MessagingDashboard() {
     const [history, setHistory] = useState<MessageHistory[]>([]);
     const [sending, setSending] = useState(false);
 
-    const selectedTemplate = useMemo(() => (templates || []).find(t => t.name === selectedTemplateName), [templates, selectedTemplateName]);
+    const selectedTemplate = useMemo(() => (templates || []).find(t => t && t.name === selectedTemplateName), [templates, selectedTemplateName]);
 
     const placeholdersByComponent = useMemo(() => {
         if (!selectedTemplate || !selectedTemplate.components) return {};
         const map: Record<string, string[]> = {};
         (selectedTemplate?.components || []).forEach(comp => {
-            if (comp.text) {
+            if (comp && comp.text) {
                 const matches = comp.text.match(/{{(\d+)}}/g);
                 if (matches) {
                     map[comp.type] = matches.map(m => m.replace(/[{}]/g, ""));
@@ -132,36 +132,37 @@ export default function MessagingDashboard() {
 
     const allPlaceholderIds = useMemo(() => {
         const ids = new Set<string>();
-        Object.values(placeholdersByComponent).forEach(compIds => {
-            compIds.forEach(id => ids.add(id));
+        Object.values(placeholdersByComponent || {}).forEach(compIds => {
+            (compIds || []).forEach(id => ids.add(id));
         });
         return Array.from(ids).sort((a, b) => parseInt(a) - parseInt(b));
     }, [placeholdersByComponent]);
 
     const previewText = useMemo(() => {
         if (!selectedTemplate) return "";
-        const body = (selectedTemplate?.components || []).find(c => c.type === "BODY");
+        const body = (selectedTemplate?.components || []).find(c => c && c.type === "BODY");
         if (!body || !body.text) return "";
         let text = body.text;
-        Object.entries(templateVariables).forEach(([key, val]) => {
+        Object.entries(templateVariables || {}).forEach(([key, val]) => {
             text = text.replace(`{{${key}}}`, val || `{{${key}}}`);
         });
         return text;
     }, [selectedTemplate, templateVariables]);
 
     const fetchTemplates = async () => {
-        if (!tenantId || tenantId === undefined) return;
+        if (!tenantId || tenantId === "undefined") return;
         setFetchingTemplates(true);
         try {
             const res = await fetch(`/api/messaging/whatsapp/templates?tenantId=${tenantId}`);
             const data = await res.json();
-            if (data.success) {
-                setTemplates(data.templates);
-                if (data.templates && data.templates.length > 0 && !selectedTemplateName) {
-                    setSelectedTemplateName(data.templates[0].name);
+            if (data && data.success) {
+                const fetchedTemplates = data.templates || [];
+                setTemplates(fetchedTemplates);
+                if (fetchedTemplates.length > 0 && !selectedTemplateName) {
+                    setSelectedTemplateName(fetchedTemplates[0].name);
                 }
             } else {
-                console.error("Failed to fetch templates:", data.error);
+                console.error("Failed to fetch templates:", data?.error);
             }
         } catch (error) {
             console.error("Error fetching templates:", error);
@@ -171,7 +172,7 @@ export default function MessagingDashboard() {
     };
 
     const fetchStudents = async (reset = true) => {
-        if (!tenantId || tenantId === undefined) return;
+        if (!tenantId || tenantId === "undefined") return;
         if (!reset) setLoadingMore(true);
         try {
             const constraints: QueryConstraint[] = [
@@ -184,7 +185,8 @@ export default function MessagingDashboard() {
             }
             const q = query(collection(db, "students"), ...constraints);
             const snapshot = await getDocs(q);
-            const docs = snapshot.docs;
+            if (!snapshot) return;
+            const docs = snapshot.docs || [];
             const hasMore = docs.length > ITEMS_PER_PAGE;
             const itemsToShow = docs.slice(0, ITEMS_PER_PAGE);
             const studentList = itemsToShow.map(doc => ({
@@ -194,7 +196,7 @@ export default function MessagingDashboard() {
             if (reset) {
                 setStudents(studentList);
             } else {
-                setStudents(prev => [...prev, ...studentList]);
+                setStudents(prev => [...(prev || []), ...studentList]);
             }
             setHasMoreStudents(hasMore);
             if (itemsToShow.length > 0) {
@@ -208,7 +210,7 @@ export default function MessagingDashboard() {
     };
 
     const fetchLeads = async (reset = true) => {
-        if (!tenantId || tenantId === undefined) return;
+        if (!tenantId || tenantId === "undefined") return;
         if (!reset) setLoadingMore(true);
         try {
             const constraints: QueryConstraint[] = [
@@ -221,7 +223,8 @@ export default function MessagingDashboard() {
             }
             const q = query(collection(db, "leads"), ...constraints);
             const snapshot = await getDocs(q);
-            const docs = snapshot.docs;
+            if (!snapshot) return;
+            const docs = snapshot.docs || [];
             const hasMore = docs.length > ITEMS_PER_PAGE;
             const itemsToShow = docs.slice(0, ITEMS_PER_PAGE);
             const leadList = itemsToShow.map(doc => ({
@@ -231,7 +234,7 @@ export default function MessagingDashboard() {
             if (reset) {
                 setLeads(leadList);
             } else {
-                setLeads(prev => [...prev, ...leadList]);
+                setLeads(prev => [...(prev || []), ...leadList]);
             }
             setHasMoreLeads(hasMore);
             if (itemsToShow.length > 0) {
@@ -245,28 +248,45 @@ export default function MessagingDashboard() {
     };
 
     useEffect(() => {
-        if (!tenantId || tenantId === undefined) return;
+        if (!tenantId || tenantId === "undefined") {
+            setLoading(false);
+            return;
+        }
         fetchStudents(true);
         fetchLeads(true);
         fetchTemplates();
-        const q = query(
-            collection(db, "tenants", tenantId, "message_history"),
-            orderBy("createdAt", "desc"),
-            limit(20)
-        );
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const data = snapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data()
-            })) as MessageHistory[];
-            setHistory(data);
+        
+        let unsubscribe = () => {};
+        try {
+            const q = query(
+                collection(db, "tenants", tenantId, "message_history"),
+                orderBy("createdAt", "desc"),
+                limit(20)
+            );
+            unsubscribe = onSnapshot(q, 
+                (snapshot) => {
+                    const data = (snapshot?.docs || []).map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    })) as MessageHistory[];
+                    setHistory(data);
+                    setLoading(false);
+                },
+                (error) => {
+                    console.error("History listener error:", error);
+                    setLoading(false);
+                }
+            );
+        } catch (err) {
+            console.error("Failed to setup history listener:", err);
             setLoading(false);
-        });
+        }
+        
         return () => unsubscribe();
     }, [tenantId]);
 
     const toggleSelect = (id: string, phone: string) => {
-        const newSelected = new Set(selectedIds);
+        const newSelected = new Set(selectedIds || []);
         if (newSelected.has(id)) {
             newSelected.delete(id);
         } else {
@@ -277,8 +297,8 @@ export default function MessagingDashboard() {
     };
 
     const toggleSelectAll = (items: (Student | Lead)[]) => {
-        const validItems = (items || []).filter(i => (i as any).phoneNumber || (i as any).phone);
-        if (selectedIds.size === validItems.length && validItems.length > 0) {
+        const validItems = (items || []).filter(i => i && ((i as any).phoneNumber || (i as any).phone));
+        if ((selectedIds?.size || 0) === validItems.length && validItems.length > 0) {
             setSelectedIds(new Set());
         } else {
             const validIds = validItems.map(i => i.id);
@@ -286,17 +306,18 @@ export default function MessagingDashboard() {
         }
     };
 
-    const campaigns = useMemo(() => Array.from(new Set((leads || []).map(l => l.campaignName).filter(Boolean))), [leads]);
-    const forms = useMemo(() => Array.from(new Set((leads || []).map(l => l.formName).filter(Boolean))), [leads]);
+    const campaigns = useMemo(() => Array.from(new Set((leads || []).map(l => l?.campaignName).filter(Boolean))), [leads]);
+    const forms = useMemo(() => Array.from(new Set((leads || []).map(l => l?.formName).filter(Boolean))), [leads]);
 
     const filteredData = useMemo(() => {
         if (source === "students") {
             return (students || []).filter(s =>
-                (s.name?.toLowerCase() || "").includes(searchQuery.toLowerCase()) ||
-                (s.rollNumber || "").includes(searchQuery)
+                s && ((s.name?.toLowerCase() || "").includes(searchQuery.toLowerCase()) ||
+                (s.rollNumber || "").includes(searchQuery))
             );
         } else {
             return (leads || []).filter(l => {
+                if (!l) return false;
                 const matchesSearch = (l.fullName?.toLowerCase() || "").includes(searchQuery.toLowerCase()) ||
                     (l.phone || "").includes(searchQuery);
                 const matchesCampaign = campaignFilter === "all" || l.campaignName === campaignFilter;
@@ -325,36 +346,40 @@ export default function MessagingDashboard() {
     }, [source, students, leads, searchQuery, campaignFilter, formFilter, dateRange]);
 
     const lastSelectedItem = useMemo(() => {
-        if (selectedIds.size === 1) {
+        if ((selectedIds?.size || 0) === 1) {
             const id = Array.from(selectedIds)[0];
-            return source === "students" ? (students || []).find(s => s.id === id) : (leads || []).find(l => l.id === id);
+            return source === "students" ? (students || []).find(s => s && s.id === id) : (leads || []).find(l => l && l.id === id);
         }
         return null;
     }, [selectedIds, source, students, leads]);
 
     const handleSendMessage = async () => {
         const recipients = source === "students"
-            ? (students || []).filter(s => selectedIds.has(s.id))
-            : (leads || []).filter(l => selectedIds.has(l.id));
-        if (selectedIds.size === 0 && selectedStudent) {
+            ? (students || []).filter(s => s && selectedIds.has(s.id))
+            : (leads || []).filter(l => l && selectedIds.has(l.id));
+        
+        if ((selectedIds?.size || 0) === 0 && selectedStudent) {
             recipients.push(selectedStudent as any);
-        } else if (selectedIds.size === 0 && searchQuery.startsWith("+")) {
+        } else if ((selectedIds?.size || 0) === 0 && searchQuery.startsWith("+")) {
             recipients.push({ id: "manual", name: "Recipient", phoneNumber: searchQuery } as any);
         }
+        
         if (recipients.length === 0 || !selectedTemplate || !tenantId) {
             alert("Please select recipients or enter a valid phone number starting with +");
             return;
         }
+        
         setSending(true);
         let successCount = 0;
         let failCount = 0;
         try {
             for (const recipient of recipients) {
+                if (!recipient) continue;
                 const phone = (recipient as any).phoneNumber || (recipient as any).phone;
                 const name = (recipient as any).name || (recipient as any).fullName;
                 const components: any[] = [];
-                Object.entries(placeholdersByComponent).forEach(([type, ids]) => {
-                    const parameters = ids.map(id => {
+                Object.entries(placeholdersByComponent || {}).forEach(([type, ids]) => {
+                    const parameters = (ids || []).map(id => {
                         let text = templateVariables[id] || "";
                         if (id === "1" && !text) text = name;
                         return { type: "text", text };
@@ -440,7 +465,7 @@ export default function MessagingDashboard() {
                                 </button>
                             </div>
 
-                            {selectedIds.size > 0 && (
+                            {(selectedIds?.size || 0) > 0 && (
                                 <div className="flex items-center gap-2 px-4 py-2 bg-primary/5 text-primary rounded-xl text-[10px] font-black uppercase tracking-widest border border-primary/10 animate-in zoom-in-95">
                                     <CheckCircle2 className="h-3 w-3" />
                                     {selectedIds.size} Selected for Broadcast
@@ -464,13 +489,12 @@ export default function MessagingDashboard() {
                                         {(forms || []).map(f => <option key={f} value={f}>{f}</option>)}
                                     </select>
                                 </div>
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Date Start</label>
-                                    <input type="date" value={dateRange.start} onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })} className="w-full px-4 py-3 bg-white border border-slate-100 rounded-xl text-xs font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/10" />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Date End</label>
-                                    <input type="date" value={dateRange.end} onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })} className="w-full px-4 py-3 bg-white border border-slate-100 rounded-xl text-xs font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/10" />
+                                <div className="space-y-2 flex flex-col">
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Date Range</label>
+                                    <div className="flex gap-2">
+                                        <input type="date" value={dateRange.start} onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })} className="w-full px-4 py-3 bg-white border border-slate-100 rounded-xl text-[10px] font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/10" />
+                                        <input type="date" value={dateRange.end} onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })} className="w-full px-4 py-3 bg-white border border-slate-100 rounded-xl text-[10px] font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary/10" />
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -479,7 +503,7 @@ export default function MessagingDashboard() {
                             <div className="flex items-center justify-between px-1">
                                 <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Select {source === "students" ? "Students" : "Leads"}</label>
                                 <button onClick={() => toggleSelectAll(filteredData)} className="text-[10px] font-black text-primary uppercase tracking-widest hover:underline">
-                                    {selectedIds.size === (filteredData || []).filter(i => (i as any).phoneNumber || (i as any).phone).length && filteredData.length > 0 ? "Deselect All" : "Select Visible"}
+                                    {(selectedIds?.size || 0) === (filteredData || []).filter(i => (i as any).phoneNumber || (i as any).phone).length && (filteredData || []).length > 0 ? "Deselect All" : "Select Visible"}
                                 </button>
                             </div>
 
@@ -491,16 +515,17 @@ export default function MessagingDashboard() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[320px] overflow-y-auto pr-2 custom-scrollbar">
                                 {loading ? (
                                     <div className="col-span-full py-20 text-center"><Loader2 className="h-8 w-8 animate-spin mx-auto text-primary/20" /></div>
-                                ) : filteredData.length === 0 ? (
+                                ) : (filteredData || []).length === 0 ? (
                                     <div className="col-span-full py-12 text-center text-slate-400 font-bold text-sm bg-slate-50 rounded-3xl border border-dashed border-slate-200">
                                         No matching {source} found.
                                     </div>
                                 ) : (
-                                    filteredData.map((item) => {
+                                    (filteredData || []).map((item) => {
+                                        if (!item) return null;
                                         const id = item.id;
-                                        const name = (item as any).name || (item as any).fullName;
+                                        const name = (item as any).name || (item as any).fullName || "Unknown";
                                         const phone = (item as any).phoneNumber || (item as any).phone;
-                                        const isSelected = selectedIds.has(id);
+                                        const isSelected = selectedIds?.has(id);
                                         const isDisabled = !phone;
                                         return (
                                             <button key={id} disabled={isDisabled} onClick={() => toggleSelect(id, phone)} className={`flex items-center gap-4 p-4 rounded-[24px] border transition-all text-left group ${isSelected ? "bg-primary/5 border-primary/20 ring-2 ring-primary/5" : "bg-white border-slate-100 hover:border-slate-200"} ${isDisabled ? "opacity-50 grayscale" : "cursor-pointer"}`}>
@@ -541,17 +566,17 @@ export default function MessagingDashboard() {
                         <div className="space-y-4">
                             <label className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1">WhatsApp Template</label>
                             <select value={selectedTemplateName} onChange={(e) => setSelectedTemplateName(e.target.value)} className="w-full px-8 py-5 bg-slate-50 border border-slate-50 rounded-[32px] focus:outline-none focus:ring-4 focus:ring-primary/5 focus:bg-white focus:border-primary/20 transition-all font-bold text-slate-900 appearance-none cursor-pointer">
-                                {templates.length === 0 ? (
+                                {(templates || []).length === 0 ? (
                                     <option value="">No templates found</option>
                                 ) : (
-                                    (templates || []).map(t => (
+                                    (templates || []).map(t => t && (
                                         <option key={t.name} value={t.name}>{t.name.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}</option>
                                     ))
                                 )}
                             </select>
                         </div>
 
-                        {allPlaceholderIds.length > 0 && (
+                        {(allPlaceholderIds || []).length > 0 && (
                             <div className="space-y-6 animate-in fade-in duration-500">
                                 <div className="flex items-center gap-2 ml-1">
                                     <div className="h-2 w-2 rounded-full bg-primary" />
@@ -588,12 +613,12 @@ export default function MessagingDashboard() {
                             </div>
                         )}
 
-                        <button onClick={handleSendMessage} disabled={sending || (selectedIds.size === 0 && !selectedStudent && !searchQuery.startsWith("+")) || !selectedTemplateName} className="w-full py-6 bg-primary text-white rounded-[32px] font-bold shadow-2xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 flex items-center justify-center gap-3 group">
+                        <button onClick={handleSendMessage} disabled={sending || ((selectedIds?.size || 0) === 0 && !selectedStudent && !searchQuery.startsWith("+")) || !selectedTemplateName} className="w-full py-6 bg-primary text-white rounded-[32px] font-bold shadow-2xl shadow-primary/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 flex items-center justify-center gap-3 group">
                             {sending ? (
                                 <Loader2 className="h-6 w-6 animate-spin" />
                             ) : (
                                 <>
-                                    {selectedIds.size > 1 ? `Broadcast to ${selectedIds.size} Recipients` : "Send Message"}
+                                    {(selectedIds?.size || 0) > 1 ? `Broadcast to ${selectedIds.size} Recipients` : "Send Message"}
                                     <Send className="h-5 w-5 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
                                 </>
                             )}
@@ -612,13 +637,13 @@ export default function MessagingDashboard() {
                         </div>
 
                         <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2 custom-scrollbar">
-                            {history.length === 0 ? (
+                            {(history || []).length === 0 ? (
                                 <div className="py-12 text-center space-y-4 opacity-50">
                                     <Clock className="h-10 w-10 mx-auto text-slate-200" />
                                     <p className="text-sm font-bold text-slate-400">No messages sent yet.</p>
                                 </div>
                             ) : (
-                                (history || []).map(item => (
+                                (history || []).map(item => item && (
                                     <div key={item.id} className="p-5 bg-slate-50 rounded-3xl space-y-3 border border-slate-50 hover:border-slate-100 transition-colors group/history">
                                         <div className="flex items-start justify-between">
                                             <div>

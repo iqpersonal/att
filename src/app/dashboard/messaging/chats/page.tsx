@@ -78,7 +78,10 @@ export default function ChatsPage() {
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const fetchConversations = async (reset = true) => {
-        if (!tenantId || tenantId === 'undefined') return;
+        if (!tenantId || tenantId === 'undefined') {
+            setLoading(false);
+            return;
+        }
         if (!reset) setLoadingMore(true);
         try {
             const constraints: QueryConstraint[] = [
@@ -90,17 +93,22 @@ export default function ChatsPage() {
             }
             const q = query(collection(db, "tenants", tenantId, "conversations"), ...constraints);
             const snapshot = await getDocs(q);
-            const docs = snapshot.docs;
+            if (!snapshot) {
+                setLoading(false);
+                return;
+            }
+            const docs = snapshot.docs || [];
             const hasMoreItems = docs.length > CONVERSATIONS_PER_PAGE;
             const itemsToShow = docs.slice(0, CONVERSATIONS_PER_PAGE);
             const convoList = itemsToShow.map(doc => ({
                 id: doc.id,
                 ...doc.data()
             })) as Conversation[];
+            
             if (reset) {
                 setConversations(convoList);
             } else {
-                setConversations(prev => [...prev, ...convoList]);
+                setConversations(prev => [...(prev || []), ...convoList]);
             }
             setHasMore(hasMoreItems);
             if (itemsToShow.length > 0) {
@@ -116,42 +124,50 @@ export default function ChatsPage() {
     };
 
     useEffect(() => {
-        if (!tenantId || tenantId === 'undefined') return;
+        if (!tenantId || tenantId === 'undefined') {
+            setLoading(false);
+            return;
+        }
         fetchConversations(true);
     }, [tenantId]);
 
     useEffect(() => {
         if (!tenantId || !selectedConvo || tenantId === 'undefined') return;
 
-        const q = query(
-            collection(db, "tenants", tenantId, "conversations", selectedConvo.id, "messages"),
-            orderBy("timestamp", "asc"),
-            limit(50)
-        );
+        let unsubscribe = () => {};
+        try {
+            const q = query(
+                collection(db, "tenants", tenantId, "conversations", selectedConvo.id, "messages"),
+                orderBy("timestamp", "asc"),
+                limit(50)
+            );
 
-        const unsubscribe = onSnapshot(
-            q,
-            (snapshot) => {
-                const data = (snapshot.docs || []).map(doc => {
-                    const docData = doc.data();
-                    return {
-                        id: doc.id,
-                        text: docData.text || docData.message, 
-                        ...docData
-                    };
-                }) as Message[];
-                setMessages(data);
+            unsubscribe = onSnapshot(
+                q,
+                (snapshot) => {
+                    const data = (snapshot?.docs || []).map(doc => {
+                        const docData = doc.data();
+                        return {
+                            id: doc.id,
+                            text: docData.text || docData.message, 
+                            ...docData
+                        };
+                    }) as Message[];
+                    setMessages(data);
 
-                if (selectedConvo.unreadCount > 0) {
-                    updateDoc(doc(db, "tenants", tenantId, "conversations", selectedConvo.id), {
-                        unreadCount: 0
-                    });
+                    if (selectedConvo && selectedConvo.unreadCount > 0) {
+                        updateDoc(doc(db, "tenants", tenantId, "conversations", selectedConvo.id), {
+                            unreadCount: 0
+                        });
+                    }
+                },
+                (error) => {
+                    console.error("[Chat] Listener error:", error);
                 }
-            },
-            (error) => {
-                console.error("[Chat] Listener error:", error);
-            }
-        );
+            );
+        } catch (err) {
+            console.error("Failed to setup chat listener:", err);
+        }
 
         return () => {
             unsubscribe();
@@ -176,7 +192,7 @@ export default function ChatsPage() {
         try {
             const result = await sendWhatsAppFreeText(selectedConvo.participantPhone, text, tenantId);
 
-            if (result.success) {
+            if (result && result.success) {
                 const convoRef = doc(db, "tenants", tenantId, "conversations", selectedConvo.id);
                 const msgId = result.data?.messages?.[0]?.id;
                 
@@ -193,7 +209,7 @@ export default function ChatsPage() {
                     updatedAt: serverTimestamp()
                 });
             } else {
-                alert(`Error: ${result.error}`);
+                alert(`Error: ${result?.error || "Unknown error"}`);
             }
         } catch (err: any) {
             console.error(err);
@@ -204,6 +220,7 @@ export default function ChatsPage() {
     };
 
     const filteredConversations = (conversations || []).filter(c => {
+        if (!c) return false;
         const displayName = c.participantName ?? c.participantPhone ?? "Unknown";
         return displayName.toLowerCase().includes(searchQuery.toLowerCase()) || (c.participantPhone ?? "").includes(searchQuery);
     });
@@ -234,14 +251,15 @@ export default function ChatsPage() {
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                    {filteredConversations.length === 0 ? (
+                    {(filteredConversations || []).length === 0 ? (
                         <div className="text-center py-10 text-slate-700">
                             <MessageSquare className="h-10 w-10 mx-auto mb-2 opacity-20" />
                             <p className="text-xs font-bold uppercase tracking-widest">No chats found</p>
                         </div>
                     ) : (
                         <>
-                            {filteredConversations.map(convo => {
+                            {(filteredConversations || []).map(convo => {
+                                if (!convo) return null;
                                 const displayName = convo.participantName ?? convo.participantPhone ?? "Unknown";
                                 const avatarLetter = (displayName ?? "?").charAt(0);
                                 return (
@@ -319,6 +337,7 @@ export default function ChatsPage() {
 
                         <div data-messages-container className="flex-1 overflow-y-auto p-8 space-y-4 bg-gradient-to-b from-slate-50/50 to-white">
                             {(messages || []).map((msg, idx) => {
+                                if (!msg) return null;
                                 const isOutbound = msg.type === "outbound";
                                 const prevMsg = idx > 0 ? messages[idx - 1] : null;
                                 const showTimestamp = idx === 0 || (prevMsg && msg.timestamp?.seconds - prevMsg.timestamp?.seconds > 300);
