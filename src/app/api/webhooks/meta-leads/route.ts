@@ -210,7 +210,7 @@ export async function POST(req: Request) {
                             email,
                             phone,
                             source: "Facebook/Instagram",
-                            status: "new",
+                            status: "phone_switched_off",
                             metaLeadId: leadGenId,
                             formId: formId || null,
                             formName, // Save form name
@@ -319,3 +319,4 @@ export async function POST(req: Request) {
         return new NextResponse(`Error: ${error.message}`, { status: 500 });
     }
 }
+

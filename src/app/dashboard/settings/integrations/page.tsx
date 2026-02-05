@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useAuth } from '@/context/AuthContext';
 import WhatsAppStatus from './whatsapp-status';
@@ -71,3 +71,4 @@ export default function IntegrationsPage() {
     </div>
   );
 }
+

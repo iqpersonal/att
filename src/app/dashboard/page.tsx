@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
@@ -49,7 +51,7 @@ export default function Dashboard() {
 
                 // Fetch Cold Leads Count (Admission Logic)
                 const leadsRef = collection(db, "leads");
-                const lq = query(leadsRef, where("tenantId", "==", currentTenantId), where("status", "==", "new"));
+                const lq = query(leadsRef, where("tenantId", "==", currentTenantId), where("status", "==", "phone_switched_off"));
                 const leadsSnap = await getDocs(lq);
 
                 const now = new Date().getTime();
@@ -249,3 +251,5 @@ export default function Dashboard() {
         </div>
     );
 }
+
+

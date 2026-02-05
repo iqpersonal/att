@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -149,3 +151,4 @@ export default function AnnouncementsPage() {
         </div>
     );
 }
+

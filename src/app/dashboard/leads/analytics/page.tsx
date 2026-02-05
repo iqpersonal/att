@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect } from "react";
 import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -284,3 +286,4 @@ export default function LeadsAnalyticsPage() {
         </div>
     );
 }
+

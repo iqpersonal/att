@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
 import { collection, query, getDocs, where } from "firebase/firestore";
@@ -148,3 +150,4 @@ export default function BatchesPage() {
         </div>
     );
 }
+

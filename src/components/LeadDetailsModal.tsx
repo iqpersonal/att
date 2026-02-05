@@ -56,7 +56,7 @@ interface Lead {
     fullName: string;
     email: string;
     phone: string;
-    status: "new" | "contacted" | "interested" | "closed" | "lost";
+    status: "phone_switched_off" | "no_incoming_call" | "contacted_whatsapp" | "interested" | "needs_followup" | "wrong_number" | "fees_paid" | "joined";
     source: string;
     campaignName?: string;
     adName?: string;
@@ -169,7 +169,7 @@ export function LeadDetailsModal({ isOpen, onClose, lead, onUpdateStatus }: Lead
 
             // 2. Update Lead Document
             await updateDoc(doc(db, "leads", lead.id), {
-                status: "closed",
+                status: "joined",
                 converted: true,
                 studentId: studentRef.id,
                 convertedAt: serverTimestamp()
@@ -179,7 +179,7 @@ export function LeadDetailsModal({ isOpen, onClose, lead, onUpdateStatus }: Lead
             await logActivity("conversion", `Lead successfully converted to Student (ID: ${studentRef.id})`);
 
             // 4. Update local status through prop
-            await onUpdateStatus(lead.id, "closed");
+            await onUpdateStatus(lead.id, "joined");
 
             setIsConverting(false);
             alert("Success! Student has been enrolled.");
@@ -215,14 +215,17 @@ export function LeadDetailsModal({ isOpen, onClose, lead, onUpdateStatus }: Lead
     if (!isOpen || !lead) return null;
 
     const statusConfig = {
-        new: { icon: Target, color: "bg-indigo-50 text-indigo-600", label: "New Lead" },
-        contacted: { icon: PhoneCall, color: "bg-blue-50 text-blue-600", label: "Contacted" },
+        phone_switched_off: { icon: X, color: "bg-red-50 text-red-600", label: "Phone Switched OFF" },
+        no_incoming_call: { icon: PhoneCall, color: "bg-orange-50 text-orange-600", label: "No incoming Call" },
+        contacted_whatsapp: { icon: MessageSquare, color: "bg-emerald-50 text-emerald-600", label: "Contacted through Whatsapp" },
         interested: { icon: Star, color: "bg-amber-50 text-amber-600", label: "Interested" },
-        closed: { icon: CheckCircle2, color: "bg-emerald-50 text-emerald-600", label: "Closed/Won" },
-        lost: { icon: X, color: "bg-red-50 text-red-600", label: "Lost/Closed" }
+        needs_followup: { icon: Clock, color: "bg-indigo-50 text-indigo-600", label: "Needs Followups" },
+        wrong_number: { icon: Hash, color: "bg-slate-50 text-slate-600", label: "Wrong Number" },
+        fees_paid: { icon: CheckCircle2, color: "bg-blue-50 text-blue-600", label: "Fees Paid" },
+        joined: { icon: Target, color: "bg-emerald-50 text-emerald-600", label: "Joined" }
     };
 
-    const config = statusConfig[lead.status] || statusConfig.new;
+    const config = statusConfig[lead.status] || statusConfig.phone_switched_off;
 
     const getActivityIcon = (type: ActivityItem["type"]) => {
         switch (type) {
@@ -271,7 +274,7 @@ export function LeadDetailsModal({ isOpen, onClose, lead, onUpdateStatus }: Lead
                         </div>
                     </div>
                     <div className="flex items-center gap-4">
-                        {!lead.converted && (lead.status === 'closed' || lead.status === 'interested') && (
+                        {!lead.converted && (lead.status === 'interested' || lead.status === 'fees_paid') && (
                             <button
                                 onClick={() => setIsConverting(!isConverting)}
                                 className={`flex items-center gap-2 px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-widest transition-all ${isConverting ? 'bg-slate-100 text-slate-400' : 'bg-primary text-white shadow-xl shadow-primary/20 hover:scale-105'
@@ -290,11 +293,14 @@ export function LeadDetailsModal({ isOpen, onClose, lead, onUpdateStatus }: Lead
                             }}
                             className="bg-white px-6 py-3 border border-slate-100 rounded-2xl text-xs font-bold text-slate-700 shadow-sm focus:ring-4 focus:ring-primary/5 outline-none cursor-pointer"
                         >
-                            <option value="new">Move to New</option>
-                            <option value="contacted">Mark Contacted</option>
-                            <option value="interested">Mark Interested</option>
-                            <option value="closed">Closed / Won</option>
-                            <option value="lost">Mark Lost</option>
+                            <option value="phone_switched_off">Phone Switched OFF</option>
+                            <option value="no_incoming_call">No incoming Call</option>
+                            <option value="contacted_whatsapp">Contacted through Whatsapp</option>
+                            <option value="interested">Interested</option>
+                            <option value="needs_followup">Needs Followups</option>
+                            <option value="wrong_number">Wrong Number</option>
+                            <option value="fees_paid">Fees Paid</option>
+                            <option value="joined">Joined</option>
                         </select>
                         <button onClick={onClose} className="p-3 bg-white border border-slate-100 rounded-2xl text-slate-400 hover:text-red-500 transition-colors shadow-sm">
                             <X className="h-5 w-5" />
@@ -558,3 +564,7 @@ export function LeadDetailsModal({ isOpen, onClose, lead, onUpdateStatus }: Lead
         </div>
     );
 }
+
+
+
+

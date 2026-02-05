@@ -121,7 +121,7 @@ export async function POST(req: Request) {
                                 fullName,
                                 email,
                                 phone,
-                                status: "new",
+                                status: "phone_switched_off",
                                 metaLeadId: lead.id,
                                 formId: lead.form_id || form.id,
                                 formName: form.name || "", // Save form name
@@ -169,3 +169,4 @@ export async function POST(req: Request) {
         }, { status: 500 });
     }
 }
+

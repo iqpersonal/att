@@ -44,7 +44,7 @@ export function AddLeadModal({ isOpen, onClose, onSuccess, tenantId }: AddLeadMo
             const docRef = await addDoc(collection(db, "leads"), {
                 ...formData,
                 tenantId,
-                status: "new",
+                status: "phone_switched_off",
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
                 notes: "Manually added through dashboard"
@@ -191,3 +191,4 @@ export function AddLeadModal({ isOpen, onClose, onSuccess, tenantId }: AddLeadMo
         </div>
     );
 }
+

@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import { useAuth } from "@/context/AuthContext";
 import { RoleGuard } from "@/components/RoleGuard";
 

@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import { useSession, signIn, signOut } from "next-auth/react";
 import { useState, useEffect } from "react";
 import { query as firestoreQuery, collection, where, onSnapshot } from "firebase/firestore";
@@ -487,6 +489,7 @@ export default function AttendancePage() {
         </div>
     );
 }
+
 
 
 

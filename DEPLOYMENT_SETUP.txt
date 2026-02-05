@@ -1,0 +1,55 @@
+
+          FIREBASE DEPLOYMENT SETUP - BODHANIKA.COM                 
+
+
+ CONFIGURATION SAVED
+   .firebaserc updated with bodhanika.com as primary domain
+   DEPLOYMENT_CONFIG.md created
+
+ NEXT STEPS TO COMPLETE DOMAIN SETUP
+
+1. Go to Firebase Console (if not already there):
+   https://console.firebase.google.com/project/tellusteams/hosting
+
+2. In Hosting section, click "Connect Domain"
+
+3. Enter your domain: bodhanika.com
+
+4. Firebase will show you DNS records to add
+
+5. Go to your domain registrar (e.g., GoDaddy, Namecheap, etc.)
+   and add the DNS A records provided by Firebase
+
+6. Wait 5-30 minutes for DNS to propagate
+
+7. Firebase will automatically verify and show "Connected" status
+
+
+
+ DEPLOYMENT COMMANDS
+
+Deploy to all domains (bodhanika.com + Firebase defaults):
+  firebase deploy
+
+Deploy only hosting:
+  firebase deploy --only hosting
+
+View deployment history:
+  firebase hosting:channel:list
+
+
+
+ DOMAIN ACCESS AFTER DNS IS CONFIGURED
+
+Production:     https://bodhanika.com
+Firebase CDN:   https://tellusteams.web.app
+Firebase Alt:   https://tellusteams.firebaseapp.com
+
+
+
+ CONFIGURATION FILES
+
+ .firebaserc       - Project ID & custom domain settings
+ firebase.json     - Hosting rules, rewrites, and redirects
+ DEPLOYMENT_CONFIG.md - Full deployment documentation
+

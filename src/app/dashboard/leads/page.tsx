@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { WhatsAppModal } from "@/components/WhatsAppModal";
@@ -40,7 +42,7 @@ interface Lead {
     fullName: string;
     email: string;
     phone: string;
-    status: "new" | "contacted" | "interested" | "closed" | "lost";
+    status: "phone_switched_off" | "no_incoming_call" | "contacted_whatsapp" | "interested" | "needs_followup" | "wrong_number" | "fees_paid" | "joined";
     source: string;
     campaignName?: string;
     adName?: string;
@@ -152,7 +154,7 @@ export default function LeadsPage() {
         const now = new Date().getTime();
 
         const staleLeads = leads.filter(l => {
-            if (l.status !== "new" || !l.createdAt) return false;
+            if (l.status !== "phone_switched_off" || !l.createdAt) return false;
             const created = l.createdAt.toDate ? l.createdAt.toDate().getTime() : new Date(l.createdAt).getTime();
             return (now - created) > threshold;
         });
@@ -168,7 +170,7 @@ export default function LeadsPage() {
         try {
             for (const lead of staleLeads) {
                 await updateDoc(doc(db, "leads", lead.id), {
-                    status: "lost",
+                    status: "wrong_number",
                     updatedAt: serverTimestamp(),
                     notes: (lead.notes || "") + "\n[System]: Auto-archived due to inactivity (>7 days in New)."
                 });
@@ -274,7 +276,7 @@ export default function LeadsPage() {
     };
 
     const isLeadStale = (lead: Lead) => {
-        if (!lead.createdAt || lead.status !== "new") return false;
+        if (!lead.createdAt || lead.status !== "phone_switched_off") return false;
         // Handle both Firestore Timestamp and JS Date
         const createdDate = lead.createdAt.toDate ? lead.createdAt.toDate().getTime() : new Date(lead.createdAt).getTime();
         const now = new Date().getTime();
@@ -291,7 +293,7 @@ export default function LeadsPage() {
     }, [tenantId]);
 
     // Analytics
-    const closedLeads = leads.filter(l => l.status === "closed").length;
+    const closedLeads = leads.filter(l => l.status === "joined").length;
     const conversionRate = totalLeadsCount > 0 ? ((closedLeads / totalLeadsCount) * 100).toFixed(1) : "0.0";
     const staleCount = leads.filter(isLeadStale).length;
 
@@ -524,8 +526,8 @@ export default function LeadsPage() {
                                     <p className="text-[10px] font-bold text-slate-400 mt-1 truncate max-w-[120px]">{lead.campaignName || "Manual"}</p>
                                 </td>
                                 <td className="px-8 py-7">
-                                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${lead.status === "new" ? "bg-indigo-50 text-indigo-600" :
-                                        lead.status === "closed" ? "bg-emerald-50 text-emerald-600" :
+                                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${lead.status === "phone_switched_off" ? "bg-indigo-50 text-indigo-600" :
+                                        lead.status === "joined" ? "bg-emerald-50 text-emerald-600" :
                                             "bg-amber-50 text-amber-600"
                                         }`}>
                                         {lead.status}
@@ -607,6 +609,8 @@ export default function LeadsPage() {
         </div>
     );
 }
+
+
 
 
 

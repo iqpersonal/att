@@ -81,7 +81,7 @@ export async function POST(req: Request) {
                 if (response.ok) {
                     // Update lead status/timestamp
                     await leadDoc.ref.update({
-                        status: "contacted",
+                        status: "contacted_whatsapp",
                         updatedAt: new Date(),
                         lastFollowUp: new Date()
                     });
@@ -116,3 +116,4 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 }
+

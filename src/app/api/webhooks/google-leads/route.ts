@@ -89,7 +89,7 @@ export async function POST(req: Request) {
             email,
             phone,
             source: "YouTube",
-            status: "new",
+            status: "phone_switched_off",
             googleLeadId: lead_id,
             formId: form_id || null,
             campaignId: campaign_id || null,
@@ -117,3 +117,4 @@ export async function POST(req: Request) {
         return new NextResponse(`Error: ${error.message}`, { status: 500 });
     }
 }
+

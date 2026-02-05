@@ -1,0 +1,91 @@
+
+              VERCEL DEPLOYMENT - QUICK START GUIDE                
+
+
+ WHAT'S BEEN DONE
+   Next.js app built successfully
+   New lead statuses configured (Phone Switched OFF, etc.)
+   All Firebase services configured and tested
+   Vercel configuration created
+
+
+
+ DEPLOYMENT STEPS (Takes ~5 minutes)
+
+STEP 1: Create Vercel Account
+   Go to https://vercel.com/signup
+   Sign up with GitHub (easiest) or Email
+
+STEP 2: Import Your GitHub Repo
+   Click "New Project"
+   Click "Import Git Repository"
+   Paste your GitHub URL or select from list
+   Click "Import"
+
+STEP 3: Configure Environment Variables
+   In Vercel Dashboard, go to: Settings  Environment Variables
+   Copy ALL variables from VERCEL_ENV_VARS.txt
+   Add them one by one to Vercel
+  
+  (Find VERCEL_ENV_VARS.txt in your project folder)
+
+STEP 4: Deploy
+   Click "Deploy"
+   Wait 2-3 minutes for build
+   Your app will be live! 
+
+STEP 5: Connect Custom Domain (bodhanika.com)
+   In Vercel Dashboard: Settings  Domains
+   Add "bodhanika.com"
+   Vercel shows DNS records
+   Go to your domain registrar (GoDaddy, Namecheap, etc.)
+   Add the DNS records Vercel provides
+   Wait 5-30 minutes for DNS to propagate
+
+
+
+ YOUR URLS
+
+  Vercel Preview:    https://<your-project>.vercel.app
+  Custom Domain:     https://bodhanika.com (after DNS setup)
+
+
+
+ KEY FILES
+
+  vercel.json            - Vercel configuration
+  VERCEL_ENV_VARS.txt    - All environment variables (copy to Vercel)
+  VERCEL_SETUP.md        - Detailed setup guide
+  .env.local             - Your local environment (don't commit!)
+
+
+
+ AUTO-DEPLOY ON GITHUB PUSH
+
+  Once connected:
+   Every time you push to GitHub main  auto-deploys to Vercel
+   No manual deploy needed
+   See deployment status in Vercel dashboard
+
+
+
+ NEED HELP?
+
+  Issue: Build fails
+   Check FIREBASE_PRIVATE_KEY format (must be exact from .env.local)
+
+  Issue: 404 on custom domain
+   Wait 30 minutes for DNS propagation
+   Verify DNS records in your registrar
+
+  Issue: Firebase not connecting
+   Verify all NEXT_PUBLIC_FIREBASE_* variables are set
+   Check FIREBASE_PRIVATE_KEY has correct newlines
+
+
+
+ SUMMARY
+
+  Your app is ready to deploy to Vercel!
+  Just follow the 5 steps above and you'll be live in minutes.
+

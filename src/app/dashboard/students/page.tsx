@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = 'force-dynamic';
+
 import { useState, useEffect } from "react";
 import { collection, query, onSnapshot, addDoc, serverTimestamp, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -431,3 +433,4 @@ export default function StudentsPage() {
         </div>
     );
 }
+
